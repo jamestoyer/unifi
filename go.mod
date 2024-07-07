@@ -1,4 +1,4 @@
-module github.com/hashicorp/terraform-provider-scaffolding-framework
+module github.com/jamestoyer/terraform-provider-unifi
 
 go 1.21
 
