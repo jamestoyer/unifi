@@ -34,7 +34,7 @@ provider "unifi" {
 
 ### Optional
 
-- `allow_insecure` (Boolean) Skip verification of TLS certificates of API requests. You may need to set this to `true` if you are using your local API without setting up a signed certificate. Can be specified with the `UNIFI_INSECURE` environment variable.
+- `insecure` (Boolean) Skip verification of TLS certificates of API requests. You may need to set this to `true` if you are using your local API without setting up a signed certificate. Can be specified with the `UNIFI_INSECURE` environment variable.
 - `password` (String, Sensitive) Password for the user accessing the API. Can be specified with the `UNIFI_PASSWORD` environment variable.
 - `site` (String) The site in the Unifi controller this provider will manage. Can be specified with the `UNIFI_SITE` environment variable. Default: `default`
 - `url` (String) URL of the controller. Can be specified with the `UNIFI_URL` environment variable. You should **NOT** supply the path (`/api`), the SDK will discover the appropriate paths. This is to support UDM Pro style API paths as well as more standard controller paths.

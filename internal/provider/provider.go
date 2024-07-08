@@ -170,7 +170,10 @@ func (p *UnifiProvider) Configure(ctx context.Context, req provider.ConfigureReq
 		return
 	}
 
-	client := &unifiClient{site: site}
+	client := &unifiClient{
+		Client: new(unifi.Client),
+		site:   site,
+	}
 	setHTTPClient(client, insecure)
 
 	resp.DataSourceData = client
