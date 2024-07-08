@@ -34,15 +34,16 @@ type UserResource struct {
 
 // UserResourceModel describes the resource data model.
 type UserResourceModel struct {
-	Id            types.String `tfsdk:"id"`
-	MAC           types.String `tfsdk:"mac"`
-	Name          types.String `tfsdk:"name"`
-	UserGroupID   types.String `tfsdk:"user_group_id"`
-	Note          types.String `tfsdk:"note"`
-	FixedIP       types.String `tfsdk:"fixed_ip"`
-	NetworkID     types.String `tfsdk:"network_id"`
-	Blocked       types.Bool   `tfsdk:"blocked"`
-	DevIdOverride types.Int64  `tfsdk:"dev_id_override"`
+	Id           types.String `tfsdk:"id"`
+	MAC          types.String `tfsdk:"mac"`
+	Name         types.String `tfsdk:"name"`
+	UserGroupID  types.String `tfsdk:"user_group_id"`
+	Note         types.String `tfsdk:"note"`
+	FixedIP      types.String `tfsdk:"fixed_ip"`
+	NetworkID    types.String `tfsdk:"network_id"`
+	Blocked      types.Bool   `tfsdk:"blocked"`
+	DeviceIconID types.Int64  `tfsdk:"device_icon_id"`
+	SiteID       types.String `tfsdk:"site_id"`
 }
 
 func (r *UserResource) Metadata(ctx context.Context, req resource.MetadataRequest, resp *resource.MetadataResponse) {
@@ -55,16 +56,6 @@ func (r *UserResource) Schema(ctx context.Context, req resource.SchemaRequest, r
 		MarkdownDescription: "Example resource",
 
 		Attributes: map[string]schema.Attribute{
-			// "configurable_attribute": schema.StringAttribute{
-			// 	MarkdownDescription: "Example configurable attribute",
-			// 	Optional:            true,
-			// },
-			// "defaulted": schema.StringAttribute{
-			// 	MarkdownDescription: "Example configurable attribute with default value",
-			// 	Optional:            true,
-			// 	Computed:            true,
-			// 	Default:             stringdefault.StaticString("example value when not configured"),
-			// },
 			"id": schema.StringAttribute{
 				Computed:            true,
 				MarkdownDescription: "Example identifier",
@@ -105,9 +96,12 @@ func (r *UserResource) Schema(ctx context.Context, req resource.SchemaRequest, r
 				MarkdownDescription: "",
 				Default:             booldefault.StaticBool(false),
 			},
-			"dev_id_override": schema.Int64Attribute{
+			"device_icon_id": schema.Int64Attribute{
 				Optional:            true,
-				MarkdownDescription: "",
+				MarkdownDescription: "ID of the the icon to assign to the device",
+			},
+			"site_id": schema.StringAttribute{
+				Computed: true,
 			},
 		},
 	}
@@ -144,15 +138,28 @@ func (r *UserResource) Create(ctx context.Context, req resource.CreateRequest, r
 	}
 
 	user := &unifi.User{
-		MAC:           data.MAC.ValueString(),
-		Name:          data.Name.ValueString(),
-		UserGroupID:   data.UserGroupID.ValueString(),
-		Note:          data.Note.ValueString(),
-		FixedIP:       data.FixedIP.ValueString(),
-		UseFixedIP:    data.FixedIP.ValueString() != "",
-		NetworkID:     data.NetworkID.ValueString(),
-		Blocked:       data.Blocked.ValueBool(),
-		DevIdOverride: int(data.DevIdOverride.ValueInt64()),
+		Hidden:                        false,
+		HiddenID:                      "",
+		NoDelete:                      false,
+		NoEdit:                        false,
+		DevIdOverride:                 int(data.DeviceIconID.ValueInt64()),
+		IP:                            "",
+		Blocked:                       data.Blocked.ValueBool(),
+		FixedApEnabled:                false,
+		FixedApMAC:                    "",
+		FixedIP:                       data.FixedIP.ValueString(),
+		Hostname:                      "",
+		LastSeen:                      0,
+		LocalDNSRecord:                "",
+		LocalDNSRecordEnabled:         false,
+		MAC:                           data.MAC.ValueString(),
+		Name:                          data.Name.ValueString(),
+		NetworkID:                     data.NetworkID.ValueString(),
+		Note:                          data.Note.ValueString(),
+		UseFixedIP:                    data.FixedIP.ValueString() != "",
+		UserGroupID:                   data.UserGroupID.ValueString(),
+		VirtualNetworkOverrideEnabled: false,
+		VirtualNetworkOverrideID:      "",
 	}
 
 	user, err := r.client.CreateUser(ctx, r.client.site, user)
@@ -162,6 +169,7 @@ func (r *UserResource) Create(ctx context.Context, req resource.CreateRequest, r
 	}
 
 	data.Id = types.StringValue(user.ID)
+	data.SiteID = types.StringValue(user.SiteID)
 
 	// Write logs using the tflog package
 	// Documentation: https://terraform.io/plugin/log
@@ -189,7 +197,7 @@ func (r *UserResource) Read(ctx context.Context, req resource.ReadRequest, resp 
 			return
 		}
 
-		resp.Diagnostics.AddError("Create user error", fmt.Sprintf("Unable to create user, got error: %s", err))
+		resp.Diagnostics.AddError("Read user error", fmt.Sprintf("Unable to read user, got error: %s", err))
 		return
 	}
 
@@ -237,6 +245,18 @@ func (r *UserResource) Delete(ctx context.Context, req resource.DeleteRequest, r
 	resp.Diagnostics.Append(req.State.Get(ctx, &data)...)
 
 	if resp.Diagnostics.HasError() {
+		return
+	}
+
+	err := r.client.DeleteUserByMAC(ctx, r.client.site, data.MAC.ValueString())
+	if err != nil {
+		var notFoundError *unifi.NotFoundError
+		if errors.As(err, &notFoundError) {
+			resp.State.RemoveResource(ctx)
+			return
+		}
+
+		resp.Diagnostics.AddError("Delete user error", fmt.Sprintf("Unable to delete user, got error: %s", err))
 		return
 	}
 
