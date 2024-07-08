@@ -32,6 +32,11 @@ type UnifiProvider struct {
 	version string
 }
 
+type unifiClient struct {
+	*unifi.Client
+	site string
+}
+
 // UnifiProviderModel describes the provider data model.
 type UnifiProviderModel struct {
 	Username types.String `tfsdk:"username"`
@@ -165,7 +170,7 @@ func (p *UnifiProvider) Configure(ctx context.Context, req provider.ConfigureReq
 		return
 	}
 
-	client := new(unifi.Client)
+	client := &unifiClient{site: site}
 	setHTTPClient(client, insecure)
 
 	resp.DataSourceData = client
@@ -198,7 +203,7 @@ func New(version string) func() provider.Provider {
 	}
 }
 
-func setHTTPClient(c *unifi.Client, insecure bool) {
+func setHTTPClient(c *unifiClient, insecure bool) {
 	httpClient := &http.Client{}
 	httpClient.Transport = &http.Transport{
 		Proxy: http.ProxyFromEnvironment,
