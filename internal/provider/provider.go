@@ -52,18 +52,19 @@ func (p *UnifiProvider) Schema(ctx context.Context, req provider.SchemaRequest, 
 			"username": schema.StringAttribute{
 				MarkdownDescription: "Local user name for the Unifi controller API. Can be specified with the `UNIFI_USERNAME` " +
 					"environment variable.",
-				Required: true,
+				Optional: true,
 			},
 			"password": schema.StringAttribute{
 				MarkdownDescription: "Password for the user accessing the API. Can be specified with the `UNIFI_PASSWORD` " +
 					"environment variable.",
-				Required: true,
+				Optional:  true,
+				Sensitive: true,
 			},
 			"url": schema.StringAttribute{
 				MarkdownDescription: "URL of the controller. Can be specified with the `UNIFI_URL` environment variable. " +
 					"You should **NOT** supply the path (`/api`), the SDK will discover the appropriate paths. This is " +
 					"to support UDM Pro style API paths as well as more standard controller paths.",
-				Required: true,
+				Optional: true,
 			},
 			"site": schema.StringAttribute{
 				MarkdownDescription: "The site in the Unifi controller this provider will manage. Can be specified with " +
@@ -89,7 +90,6 @@ func (p *UnifiProvider) Configure(ctx context.Context, req provider.ConfigureReq
 		return
 	}
 
-	// TODO: (jtoyer) Add env var support
 	url := os.Getenv("UNIFI_URL")
 	username := os.Getenv("UNIFI_USERNAME")
 	password := os.Getenv("UNIFI_PASSWORD")
