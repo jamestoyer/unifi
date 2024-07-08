@@ -6,6 +6,7 @@ package provider
 import (
 	"context"
 	"crypto/tls"
+	"fmt"
 	"github.com/hashicorp/terraform-plugin-framework/datasource"
 	"github.com/hashicorp/terraform-plugin-framework/function"
 	"github.com/hashicorp/terraform-plugin-framework/path"
@@ -176,13 +177,23 @@ func (p *UnifiProvider) Configure(ctx context.Context, req provider.ConfigureReq
 	}
 	setHTTPClient(client, insecure)
 
+	if err := client.SetBaseURL(url); err != nil {
+		resp.Diagnostics.AddError("Invalid base URL", fmt.Sprintf("The base URL for the client is invalid: %s", err))
+		return
+	}
+
+	if err := client.Login(ctx, username, password); err != nil {
+		resp.Diagnostics.AddError("Invalid User Credentials", fmt.Sprintf("The provided user credentials are incorrect: %s", err))
+		return
+	}
+
 	resp.DataSourceData = client
 	resp.ResourceData = client
 }
 
 func (p *UnifiProvider) Resources(ctx context.Context) []func() resource.Resource {
 	return []func() resource.Resource{
-		NewExampleResource,
+		NewUserResource,
 	}
 }
 
