@@ -41,6 +41,7 @@ func TestExampleFunction_Null(t *testing.T) {
 		Steps: []resource.TestStep{
 			{
 				Config: `
+				provider "unifi" {}
 				output "test" {
 					value = provider::unifi::example(null)
 				}
@@ -61,6 +62,7 @@ func TestExampleFunction_Unknown(t *testing.T) {
 		Steps: []resource.TestStep{
 			{
 				Config: `
+				provider "unifi" {}
 				resource "terraform_data" "test" {
 					input = "testvalue"
 				}

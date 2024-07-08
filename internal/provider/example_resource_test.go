@@ -49,6 +49,7 @@ func TestAccExampleResource(t *testing.T) {
 
 func testAccExampleResourceConfig(configurableAttribute string) string {
 	return fmt.Sprintf(`
+provider "unifi" {}
 resource "unifi_example" "test" {
   configurable_attribute = %[1]q
 }

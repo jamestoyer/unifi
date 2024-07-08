@@ -1,4 +1,4 @@
-// Copyright (c) HashiCorp, Inc.
+// Copyright (c) James Toyer
 // SPDX-License-Identifier: MPL-2.0
 
 package provider
@@ -19,7 +19,10 @@ var testAccProtoV6ProviderFactories = map[string]func() (tfprotov6.ProviderServe
 }
 
 func testAccPreCheck(t *testing.T) {
-	// You can add code here to run prior to any test case execution, for example assertions
-	// about the appropriate environment variables being set are common to see in a pre-check
-	// function.
+	const user = "admin"
+	const password = "admin"
+	t.Setenv("UNIFI_USERNAME", user)
+	t.Setenv("UNIFI_PASSWORD", password)
+	t.Setenv("UNIFI_INSECURE", "true")
+	t.Setenv("UNIFI_URL", "localhost:8443")
 }
