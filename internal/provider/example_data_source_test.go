@@ -26,6 +26,7 @@ func TestAccExampleDataSource(t *testing.T) {
 }
 
 const testAccExampleDataSourceConfig = `
+provider "unifi" {}
 data "unifi_example" "test" {
   configurable_attribute = "example"
 }

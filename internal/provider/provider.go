@@ -71,7 +71,7 @@ func (p *UnifiProvider) Schema(ctx context.Context, req provider.SchemaRequest, 
 					"the `UNIFI_SITE` environment variable. Default: `default`",
 				Optional: true,
 			},
-			"allow_insecure": schema.BoolAttribute{
+			"insecure": schema.BoolAttribute{
 				MarkdownDescription: "Skip verification of TLS certificates of API requests. You may need to set this to `true` " +
 					"if you are using your local API without setting up a signed certificate. Can be specified with the " +
 					"`UNIFI_INSECURE` environment variable.",

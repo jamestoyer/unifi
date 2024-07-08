@@ -84,7 +84,7 @@ func testAccPreCheck(t *testing.T) {
 		panic(err)
 	}
 
-	if err := os.Setenv("UNIFI_API", "localhost:8443"); err != nil {
+	if err := os.Setenv("UNIFI_URL", "localhost:8443"); err != nil {
 		panic(err)
 	}
 }
