@@ -8,8 +8,10 @@ import (
 	"fmt"
 	"github.com/hashicorp/terraform-plugin-framework/datasource"
 	"github.com/hashicorp/terraform-plugin-framework/datasource/schema"
+	"github.com/hashicorp/terraform-plugin-framework/schema/validator"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/hashicorp/terraform-plugin-log/tflog"
+	"strconv"
 )
 
 // Ensure provider defined types fully satisfy framework interfaces.
@@ -26,8 +28,25 @@ type DeviceDataSource struct {
 
 // DeviceDataSourceModel describes the data source data model.
 type DeviceDataSourceModel struct {
-	ConfigurableAttribute types.String `tfsdk:"configurable_attribute"`
-	Id                    types.String `tfsdk:"id"`
+	Mac  types.String `tfsdk:"mac"`
+	Site types.String `tfsdk:"site"`
+
+	// Read Only
+	ID            types.String                                 `tfsdk:"id"`
+	Adopted       types.Bool                                   `tfsdk:"adopted"`
+	Disabled      types.Bool                                   `tfsdk:"disabled"`
+	Name          types.String                                 `tfsdk:"name"`
+	PortOverrides map[string]DevicePortOverrideDataSourceModel `tfsdk:"port_overrides"`
+	State         types.String                                 `tfsdk:"state"`
+	Type          types.String                                 `tfsdk:"type"`
+}
+
+type DevicePortOverrideDataSourceModel struct {
+	Name              types.String `tfsdk:"name"`
+	PortProfileID     types.String `tfsdk:"port_profile_id"`
+	OpMode            types.String `tfsdk:"op_mode"`
+	POEMode           types.String `tfsdk:"poe_mode"`
+	AggregateNumPorts types.Int32  `tfsdk:"aggregate_num_ports"`
 }
 
 func (d *DeviceDataSource) Metadata(ctx context.Context, req datasource.MetadataRequest, resp *datasource.MetadataResponse) {
@@ -40,13 +59,60 @@ func (d *DeviceDataSource) Schema(ctx context.Context, req datasource.SchemaRequ
 		MarkdownDescription: "Device data source",
 
 		Attributes: map[string]schema.Attribute{
-			"configurable_attribute": schema.StringAttribute{
-				MarkdownDescription: "Device configurable attribute",
+			"mac": schema.StringAttribute{
+				MarkdownDescription: "The MAC address of the device",
+				Required:            true,
+				Validators:          []validator.String{
+					// TODO: (jtoyer) Add a mac address validator
+				},
+			},
+			"site": schema.StringAttribute{
+				MarkdownDescription: "The site of the device. When set this overrides the default provider site",
+				Computed:            true,
 				Optional:            true,
 			},
+
+			// Read only
 			"id": schema.StringAttribute{
 				MarkdownDescription: "Device identifier",
 				Computed:            true,
+			},
+			"adopted": schema.BoolAttribute{
+				Computed: true,
+			},
+			"disabled": schema.BoolAttribute{
+				Computed: true,
+			},
+			"name": schema.StringAttribute{
+				Computed: true,
+			},
+			"port_overrides": schema.MapNestedAttribute{
+				Computed: true,
+				NestedObject: schema.NestedAttributeObject{
+					Attributes: map[string]schema.Attribute{
+						"name": schema.StringAttribute{
+							Computed: true,
+						},
+						"port_profile_id": schema.StringAttribute{
+							Computed: true,
+						},
+						"op_mode": schema.StringAttribute{
+							Computed: true,
+						},
+						"poe_mode": schema.StringAttribute{
+							Computed: true,
+						},
+						"aggregate_num_ports": schema.Int32Attribute{
+							Computed: true,
+						},
+					},
+				},
+			},
+			"state": schema.StringAttribute{
+				Computed: true,
+			},
+			"type": schema.StringAttribute{
+				Computed: true,
 			},
 		},
 	}
@@ -82,21 +148,38 @@ func (d *DeviceDataSource) Read(ctx context.Context, req datasource.ReadRequest,
 		return
 	}
 
-	// If applicable, this is a great opportunity to initialize any necessary
-	// provider client data and make a call using it.
-	// httpResp, err := d.client.Do(httpReq)
-	// if err != nil {
-	//     resp.Diagnostics.AddError("Client Error", fmt.Sprintf("Unable to read device, got error: %s", err))
-	//     return
-	// }
+	site := data.Site.ValueString()
+	if site == "" {
+		site = d.client.site
+	}
 
-	// For the purposes of this example code, hardcoding a response value to
-	// save into the Terraform state.
-	data.Id = types.StringValue("example-id")
+	data.Site = types.StringValue(site)
 
-	// Write logs using the tflog package
-	// Documentation: https://terraform.io/plugin/log
-	tflog.Trace(ctx, "read a data source")
+	device, err := d.client.GetDeviceByMAC(ctx, site, data.Mac.ValueString())
+	if err != nil {
+		resp.Diagnostics.AddError("Client Error", fmt.Sprintf("Unable to read device, got error: %s", err))
+		return
+	}
+
+	data.ID = types.StringValue(device.ID)
+	data.Adopted = types.BoolValue(device.Adopted)
+	data.Disabled = types.BoolValue(device.Disabled)
+	data.Name = types.StringValue(device.Name)
+	data.State = types.StringValue(device.State.String())
+	data.Type = types.StringValue(device.Type)
+	data.PortOverrides = make(map[string]DevicePortOverrideDataSourceModel, len(device.PortOverrides))
+
+	for _, override := range device.PortOverrides {
+		data.PortOverrides[strconv.Itoa(override.PortIDX)] = DevicePortOverrideDataSourceModel{
+			Name:              types.StringValue(override.Name),
+			PortProfileID:     types.StringValue(override.PortProfileID),
+			OpMode:            types.StringValue(override.OpMode),
+			POEMode:           types.StringValue(override.PoeMode),
+			AggregateNumPorts: types.Int32Value(int32(override.AggregateNumPorts)),
+		}
+	}
+
+	tflog.Trace(ctx, "device read", map[string]interface{}{"mac": data.Mac.ValueString()})
 
 	// Save data into Terraform state
 	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
