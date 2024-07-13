@@ -19,6 +19,33 @@ Device data source
 
 - `mac` (String) The MAC address of the device
 
+### Optional
+
+- `site` (String) The site of the device. When set this overrides the default provider site
+
 ### Read-Only
 
+- `adopted` (Boolean)
+- `disabled` (Boolean)
 - `id` (String) Device identifier
+- `name` (String)
+- `port_overrides` (Attributes Map) (see [below for nested schema](#nestedatt--port_overrides))
+- `state` (String)
+- `type` (String)
+
+<a id="nestedatt--port_overrides"></a>
+### Nested Schema for `port_overrides`
+
+Read-Only:
+
+- `aggregate_num_ports` (Number)
+- `excluded_network_ids` (List of String)
+- `name` (String)
+- `native_network_id` (String) The native network used for VLAN traffic, i.e. not tagged with a VLAN ID.
+
+Untagged traffic from devices connected to this port will be placed on to the selected VLAN
+- `op_mode` (String)
+- `poe_mode` (String)
+- `port_profile_id` (String)
+- `port_security_enabled` (Boolean)
+- `port_security_mac_addresses` (List of String)
