@@ -6,6 +6,7 @@ package provider
 import (
 	"context"
 	"fmt"
+	"github.com/hashicorp/terraform-plugin-framework/attr"
 	"github.com/hashicorp/terraform-plugin-framework/datasource"
 	"github.com/hashicorp/terraform-plugin-framework/datasource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/schema/validator"
@@ -42,11 +43,15 @@ type DeviceDataSourceModel struct {
 }
 
 type DevicePortOverrideDataSourceModel struct {
-	Name              types.String `tfsdk:"name"`
-	PortProfileID     types.String `tfsdk:"port_profile_id"`
-	OpMode            types.String `tfsdk:"op_mode"`
-	POEMode           types.String `tfsdk:"poe_mode"`
-	AggregateNumPorts types.Int32  `tfsdk:"aggregate_num_ports"`
+	AggregateNumPorts        types.Int32  `tfsdk:"aggregate_num_ports"`
+	ExcludedNetworkIDs       types.List   `tfsdk:"excluded_network_ids"`
+	Name                     types.String `tfsdk:"name"`
+	NativeNetworkID          types.String `tfsdk:"native_network_id"`
+	OpMode                   types.String `tfsdk:"op_mode"`
+	POEMode                  types.String `tfsdk:"poe_mode"`
+	PortProfileID            types.String `tfsdk:"port_profile_id"`
+	PortSecurityEnabled      types.Bool   `tfsdk:"port_security_enabled"`
+	PortSecurityMACAddresses types.List   `tfsdk:"port_security_mac_addresses"`
 }
 
 func (d *DeviceDataSource) Metadata(ctx context.Context, req datasource.MetadataRequest, resp *datasource.MetadataResponse) {
@@ -90,10 +95,20 @@ func (d *DeviceDataSource) Schema(ctx context.Context, req datasource.SchemaRequ
 				Computed: true,
 				NestedObject: schema.NestedAttributeObject{
 					Attributes: map[string]schema.Attribute{
+						"aggregate_num_ports": schema.Int32Attribute{
+							Computed: true,
+						},
+						"excluded_network_ids": schema.ListAttribute{
+							ElementType: types.StringType,
+							Computed:    true,
+						},
 						"name": schema.StringAttribute{
 							Computed: true,
 						},
-						"port_profile_id": schema.StringAttribute{
+						"native_network_id": schema.StringAttribute{
+							MarkdownDescription: `The native network used for VLAN traffic, i.e. not tagged with a VLAN ID.
+
+Untagged traffic from devices connected to this port will be placed on to the selected VLAN`,
 							Computed: true,
 						},
 						"op_mode": schema.StringAttribute{
@@ -102,8 +117,15 @@ func (d *DeviceDataSource) Schema(ctx context.Context, req datasource.SchemaRequ
 						"poe_mode": schema.StringAttribute{
 							Computed: true,
 						},
-						"aggregate_num_ports": schema.Int32Attribute{
+						"port_profile_id": schema.StringAttribute{
 							Computed: true,
+						},
+						"port_security_enabled": schema.BoolAttribute{
+							Computed: true,
+						},
+						"port_security_mac_addresses": schema.ListAttribute{
+							ElementType: types.StringType,
+							Computed:    true,
 						},
 					},
 				},
@@ -167,15 +189,39 @@ func (d *DeviceDataSource) Read(ctx context.Context, req datasource.ReadRequest,
 	data.Name = types.StringValue(device.Name)
 	data.State = types.StringValue(device.State.String())
 	data.Type = types.StringValue(device.Type)
-	data.PortOverrides = make(map[string]DevicePortOverrideDataSourceModel, len(device.PortOverrides))
 
+	data.PortOverrides = make(map[string]DevicePortOverrideDataSourceModel, len(device.PortOverrides))
 	for _, override := range device.PortOverrides {
+		excludedNetworkIDs := types.ListNull(types.StringType)
+		if override.ExcludedNetworkIDs != nil {
+			var attrs []attr.Value
+			for _, id := range override.ExcludedNetworkIDs {
+				attrs = append(attrs, types.StringValue(id))
+			}
+
+			excludedNetworkIDs = types.ListValueMust(types.StringType, attrs)
+		}
+
+		portSecurityMACAddresses := types.ListNull(types.StringType)
+		if override.PortSecurityMACAddress != nil {
+			var attrs []attr.Value
+			for _, id := range override.PortSecurityMACAddress {
+				attrs = append(attrs, types.StringValue(id))
+			}
+
+			portSecurityMACAddresses = types.ListValueMust(types.StringType, attrs)
+		}
+
 		data.PortOverrides[strconv.Itoa(override.PortIDX)] = DevicePortOverrideDataSourceModel{
-			Name:              types.StringValue(override.Name),
-			PortProfileID:     types.StringValue(override.PortProfileID),
-			OpMode:            types.StringValue(override.OpMode),
-			POEMode:           types.StringValue(override.PoeMode),
-			AggregateNumPorts: types.Int32Value(int32(override.AggregateNumPorts)),
+			AggregateNumPorts:        types.Int32Value(int32(override.AggregateNumPorts)),
+			ExcludedNetworkIDs:       excludedNetworkIDs,
+			Name:                     types.StringValue(override.Name),
+			NativeNetworkID:          types.StringValue(override.NATiveNetworkID),
+			OpMode:                   types.StringValue(override.OpMode),
+			POEMode:                  types.StringValue(override.PoeMode),
+			PortProfileID:            types.StringValue(override.PortProfileID),
+			PortSecurityEnabled:      types.BoolValue(override.PortSecurityEnabled),
+			PortSecurityMACAddresses: portSecurityMACAddresses,
 		}
 	}
 
