@@ -12,10 +12,10 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/booldefault"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
-	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringdefault"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/types"
-	"github.com/paultyng/go-unifi/unifi"
+	"github.com/hashicorp/terraform-plugin-log/tflog"
+	"github.com/jamestoyer/go-unifi/unifi"
 )
 
 // Ensure provider defined types fully satisfy framework interfaces.
@@ -116,55 +116,48 @@ func (r *UserResource) Schema(ctx context.Context, req resource.SchemaRequest, r
 				},
 			},
 			"attr_hidden": schema.BoolAttribute{
-				Computed: true,
-				Default:  booldefault.StaticBool(false),
+				Optional: true,
 			},
 			"attr_hidden_id": schema.StringAttribute{
-				Computed: true,
-				Default:  stringdefault.StaticString(""),
+				Optional: true,
 			},
 			"attr_no_delete": schema.BoolAttribute{
-				Computed: true,
-				Default:  booldefault.StaticBool(false),
+				Optional: true,
 			},
 			"attr_no_edit": schema.BoolAttribute{
-				Computed: true,
-				Default:  booldefault.StaticBool(false),
+				Optional: true,
 			},
 			"ip": schema.StringAttribute{
 				Computed: true,
-				Default:  stringdefault.StaticString(""),
 			},
 			"fixed_ap_enabled": schema.BoolAttribute{
 				Computed: true,
-				Default:  booldefault.StaticBool(false),
+				Optional: true,
 			},
 			"fixed_ap_mac": schema.StringAttribute{
-				Computed: true,
-				Default:  stringdefault.StaticString(""),
+				Optional: true,
 			},
 			"hostname": schema.StringAttribute{
-				Computed: true,
-				Default:  stringdefault.StaticString(""),
+				Optional: true,
 			},
 			"local_dns_record": schema.StringAttribute{
 				Computed: true,
-				Default:  stringdefault.StaticString(""),
+				Optional: true,
 			},
 			"local_dns_record_enabled": schema.BoolAttribute{
 				Computed: true,
-				Default:  booldefault.StaticBool(false),
+				Optional: true,
 			},
 			"use_fixedip": schema.BoolAttribute{
 				Computed: true,
 			},
 			"virtual_network_override_enabled": schema.BoolAttribute{
 				Computed: true,
-				Default:  booldefault.StaticBool(false),
+				Optional: true,
 			},
 			"virtual_network_override_id": schema.StringAttribute{
 				Computed: true,
-				Default:  stringdefault.StaticString(""),
+				Optional: true,
 			},
 		},
 	}
@@ -207,7 +200,7 @@ func (r *UserResource) Create(ctx context.Context, req resource.CreateRequest, r
 		return
 	}
 
-	data.ID = types.StringValue(user.ID)
+	data.ID = types.StringValue(*user.ID)
 	data = setComputedUserAttributes(user, data)
 
 	// Save data into Terraform state
@@ -239,6 +232,7 @@ func (r *UserResource) Read(ctx context.Context, req resource.ReadRequest, resp 
 	data = setComputedUserAttributes(user, data)
 	data = setUserDefinedUserAttributes(user, data)
 
+	data.FixedIP = types.StringNull()
 	// Save updated data into Terraform state
 	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
 }
@@ -254,11 +248,13 @@ func (r *UserResource) Update(ctx context.Context, req resource.UpdateRequest, r
 	}
 
 	user := convertUserResourceModel(data)
-	user.ID = data.ID.ValueString()
+	user.ID = data.ID.ValueStringPointer()
+	tflog.Debug(ctx, "User ID", map[string]interface{}{"user_id": user.ID})
 	user, err := r.client.UpdateUser(ctx, r.client.site, user)
 	if err != nil {
 		var notFoundError *unifi.NotFoundError
 		if errors.As(err, &notFoundError) {
+			tflog.Debug(ctx, "User not found", map[string]interface{}{"response": err})
 			resp.State.RemoveResource(ctx)
 			return
 		}
@@ -267,6 +263,7 @@ func (r *UserResource) Update(ctx context.Context, req resource.UpdateRequest, r
 		return
 	}
 
+	tflog.Debug(ctx, "Update User", map[string]interface{}{"user": user})
 	data = setComputedUserAttributes(user, data)
 
 	// Save updated data into Terraform state
@@ -301,48 +298,52 @@ func (r *UserResource) ImportState(ctx context.Context, req resource.ImportState
 
 func convertUserResourceModel(data UserResourceModel) *unifi.User {
 	user := &unifi.User{
-		DevIdOverride: int(data.DeviceIconID.ValueInt64()),
-		Blocked:       data.Blocked.ValueBool(),
-		FixedIP:       data.FixedIP.ValueString(),
-		MAC:           data.MAC.ValueString(),
-		Name:          data.Name.ValueString(),
-		NetworkID:     data.NetworkID.ValueString(),
-		Note:          data.Note.ValueString(),
-		UseFixedIP:    data.FixedIP.ValueString() != "",
-		UserGroupID:   data.UserGroupID.ValueString(),
+		Blocked:     data.Blocked.ValueBoolPointer(),
+		FixedIP:     data.FixedIP.ValueStringPointer(),
+		MAC:         data.MAC.ValueStringPointer(),
+		Name:        data.Name.ValueStringPointer(),
+		NetworkID:   data.NetworkID.ValueString(),
+		Note:        data.Note.ValueStringPointer(),
+		UseFixedIP:  data.FixedIP.ValueString() != "",
+		UserGroupID: data.UserGroupID.ValueString(),
+	}
+
+	if !data.DeviceIconID.IsNull() {
+		override := int(data.DeviceIconID.ValueInt64())
+		user.DevIdOverride = &override
 	}
 
 	return user
 }
 
 func setUserDefinedUserAttributes(user *unifi.User, data UserResourceModel) UserResourceModel {
-	data.MAC = types.StringValue(user.MAC)
-	data.Name = types.StringValue(user.Name)
+	data.MAC = types.StringPointerValue(user.MAC)
+	data.Name = types.StringPointerValue(user.Name)
 	data.UserGroupID = types.StringValue(user.UserGroupID)
-	data.Note = types.StringValue(user.Note)
-	data.FixedIP = types.StringValue(user.FixedIP)
+	data.Note = types.StringPointerValue(user.Note)
+	data.FixedIP = types.StringPointerValue(user.FixedIP)
 	data.NetworkID = types.StringValue(user.NetworkID)
-	data.Blocked = types.BoolValue(user.Blocked)
+	data.Blocked = types.BoolPointerValue(user.Blocked)
 
-	if user.DevIdOverride == 0 {
+	if user.DevIdOverride == nil {
 		data.DeviceIconID = types.Int64Null()
 	} else {
-		data.DeviceIconID = types.Int64Value(int64(user.DevIdOverride))
+		data.DeviceIconID = types.Int64Value(int64(*user.DevIdOverride))
 	}
 
 	return data
 }
 
 func setComputedUserAttributes(user *unifi.User, data UserResourceModel) UserResourceModel {
-	data.Hidden = types.BoolValue(user.Hidden)
-	data.HiddenID = types.StringValue(user.HiddenID)
-	data.NoDelete = types.BoolValue(user.NoDelete)
-	data.NoEdit = types.BoolValue(user.NoEdit)
-	data.IP = types.StringValue(user.IP)
+	data.Hidden = types.BoolPointerValue(user.Hidden)
+	data.HiddenID = types.StringPointerValue(user.HiddenID)
+	data.NoDelete = types.BoolPointerValue(user.NoDelete)
+	data.NoEdit = types.BoolPointerValue(user.NoEdit)
+	data.IP = types.StringPointerValue(user.IP)
 	data.FixedApEnabled = types.BoolValue(user.FixedApEnabled)
-	data.FixedApMAC = types.StringValue(user.FixedApMAC)
-	data.Hostname = types.StringValue(user.Hostname)
-	data.LocalDNSRecord = types.StringValue(user.LocalDNSRecord)
+	data.FixedApMAC = types.StringPointerValue(user.FixedApMAC)
+	data.Hostname = types.StringPointerValue(user.Hostname)
+	data.LocalDNSRecord = types.StringPointerValue(user.LocalDNSRecord)
 	data.LocalDNSRecordEnabled = types.BoolValue(user.LocalDNSRecordEnabled)
 	data.UseFixedIP = types.BoolValue(user.UseFixedIP)
 	data.VirtualNetworkOverrideEnabled = types.BoolValue(user.VirtualNetworkOverrideEnabled)
