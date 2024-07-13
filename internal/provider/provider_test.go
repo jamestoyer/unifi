@@ -24,5 +24,5 @@ func testAccPreCheck(t *testing.T) {
 	t.Setenv("UNIFI_USERNAME", user)
 	t.Setenv("UNIFI_PASSWORD", password)
 	t.Setenv("UNIFI_INSECURE", "true")
-	t.Setenv("UNIFI_URL", "localhost:8443")
+	t.Setenv("UNIFI_URL", "https://localhost:8443")
 }
