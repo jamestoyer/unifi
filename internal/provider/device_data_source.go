@@ -60,8 +60,7 @@ func (d *DeviceDataSource) Metadata(ctx context.Context, req datasource.Metadata
 
 func (d *DeviceDataSource) Schema(ctx context.Context, req datasource.SchemaRequest, resp *datasource.SchemaResponse) {
 	resp.Schema = schema.Schema{
-		// This description is used by the documentation generator and the language server.
-		MarkdownDescription: "Device data source",
+		MarkdownDescription: "Get information about a Unifi device",
 
 		Attributes: map[string]schema.Attribute{
 			"mac": schema.StringAttribute{
@@ -106,9 +105,9 @@ func (d *DeviceDataSource) Schema(ctx context.Context, req datasource.SchemaRequ
 							Computed: true,
 						},
 						"native_network_id": schema.StringAttribute{
-							MarkdownDescription: `The native network used for VLAN traffic, i.e. not tagged with a VLAN ID.
-
-Untagged traffic from devices connected to this port will be placed on to the selected VLAN`,
+							MarkdownDescription: "The native network used for VLAN traffic, i.e. not tagged with a " +
+								"VLAN ID. Untagged traffic from devices connected to this port will be placed on to " +
+								"the selected VLAN",
 							Computed: true,
 						},
 						"op_mode": schema.StringAttribute{

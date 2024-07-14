@@ -3,12 +3,12 @@
 page_title: "unifi_device Data Source - unifi"
 subcategory: ""
 description: |-
-  Device data source
+  Get information about a Unifi device
 ---
 
 # unifi_device (Data Source)
 
-Device data source
+Get information about a Unifi device
 
 
 
@@ -41,9 +41,7 @@ Read-Only:
 - `aggregate_num_ports` (Number)
 - `excluded_network_ids` (List of String)
 - `name` (String)
-- `native_network_id` (String) The native network used for VLAN traffic, i.e. not tagged with a VLAN ID.
-
-Untagged traffic from devices connected to this port will be placed on to the selected VLAN
+- `native_network_id` (String) The native network used for VLAN traffic, i.e. not tagged with a VLAN ID. Untagged traffic from devices connected to this port will be placed on to the selected VLAN
 - `op_mode` (String)
 - `poe_mode` (String)
 - `port_profile_id` (String)
