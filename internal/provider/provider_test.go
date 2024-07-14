@@ -14,6 +14,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 )
 
 // testAccProtoV6ProviderFactories are used to instantiate a provider during
@@ -110,7 +111,9 @@ func runAcceptanceTests(m *testing.M) int {
 			Consumers: logConsumers,
 		},
 		WaitingFor: wait.ForAll(
-			wait.ForLog("<launcher> INFO  tomcat - systemd: Startup completed. Ready for watchdog keep-alive checking."),
+			wait.ForLog("<launcher> INFO  tomcat - systemd: Startup completed. Ready for watchdog keep-alive checking.").
+				WithStartupTimeout(10 * time.Minute).
+				WithPollInterval(1 * time.Second),
 		),
 	}
 
