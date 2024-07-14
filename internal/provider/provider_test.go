@@ -53,11 +53,6 @@ func runAcceptanceTests(m *testing.M) int {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	// Workaround for https://github.com/testcontainers/testcontainers-go/issues/2621
-	if err = os.Setenv("TESTCONTAINERS_RYUK_RECONNECTION_TIMEOUT", "5m"); err != nil {
-		panic(err)
-	}
-
 	if err = dc.WithOsEnv().Up(ctx, compose.Wait(true)); err != nil {
 		panic(err)
 	}
