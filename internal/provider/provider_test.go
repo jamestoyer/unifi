@@ -12,6 +12,8 @@ import (
 
 	"github.com/hashicorp/terraform-plugin-framework/providerserver"
 	"github.com/hashicorp/terraform-plugin-go/tfprotov6"
+	"github.com/testcontainers/testcontainers-go"
+	"github.com/testcontainers/testcontainers-go/modules/compose"
 )
 
 // testAccProtoV6ProviderFactories are used to instantiate a provider during
@@ -22,13 +24,15 @@ var testAccProtoV6ProviderFactories = map[string]func() (tfprotov6.ProviderServe
 	"unifi": providerserver.NewProtocol6WithError(New("test")()),
 }
 
+var testClient *unifiClient
+
 func testAccPreCheck(t *testing.T) {
-	const user = "admin"
-	const password = "admin"
-	t.Setenv("UNIFI_USERNAME", user)
-	t.Setenv("UNIFI_PASSWORD", password)
-	t.Setenv("UNIFI_INSECURE", "true")
-	t.Setenv("UNIFI_URL", "https://localhost:8443")
+	// const user = "admin"
+	// const password = "admin"
+	// t.Setenv("UNIFI_USERNAME", user)
+	// t.Setenv("UNIFI_PASSWORD", password)
+	// t.Setenv("UNIFI_INSECURE", "true")
+	// t.Setenv("UNIFI_URL", "https://localhost:8443")
 }
 
 func TestMain(m *testing.M) {
@@ -41,13 +45,18 @@ func TestMain(m *testing.M) {
 }
 
 func runAcceptanceTests(m *testing.M) int {
-	dc, err := compose.NewDockerCompose("../../docker-compose.yaml")
+	dc, err := compose.NewDockerCompose("../../docker-compose.yml")
 	if err != nil {
 		panic(err)
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
+
+	// Workaround for https://github.com/testcontainers/testcontainers-go/issues/2621
+	if err = os.Setenv("TESTCONTAINERS_RYUK_RECONNECTION_TIMEOUT", "5m"); err != nil {
+		panic(err)
+	}
 
 	if err = dc.WithOsEnv().Up(ctx, compose.Wait(true)); err != nil {
 		panic(err)
@@ -102,13 +111,18 @@ func runAcceptanceTests(m *testing.M) int {
 		panic(err)
 	}
 
-	if err = os.Setenv("UNIFI_API", endpoint); err != nil {
+	if err = os.Setenv("UNIFI_URL", endpoint); err != nil {
 		panic(err)
 	}
 
-	testClient = &unifi.Client{}
-	setHTTPClient(testClient, true, "unifi")
-	testClient.SetBaseURL(endpoint)
+	testClient = &unifiClient{
+		Client: &unifi.Client{},
+		site:   "default",
+	}
+	setHTTPClient(testClient, true)
+	if err = testClient.SetBaseURL(endpoint); err != nil {
+		panic(err)
+	}
 	if err = testClient.Login(ctx, user, password); err != nil {
 		panic(err)
 	}

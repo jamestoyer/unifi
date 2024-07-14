@@ -28,6 +28,7 @@ Get information about a Unifi device
 - `adopted` (Boolean)
 - `disabled` (Boolean)
 - `id` (String) Device identifier
+- `model` (String)
 - `name` (String)
 - `port_overrides` (Attributes Map) (see [below for nested schema](#nestedatt--port_overrides))
 - `state` (String)
