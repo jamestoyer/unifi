@@ -4,16 +4,16 @@
 package provider
 
 import (
-	"bytes"
 	"context"
-	"github.com/paultyng/go-unifi/unifi"
-	"os"
-	"testing"
-
 	"github.com/hashicorp/terraform-plugin-framework/providerserver"
 	"github.com/hashicorp/terraform-plugin-go/tfprotov6"
+	"github.com/paultyng/go-unifi/unifi"
 	"github.com/testcontainers/testcontainers-go"
-	"github.com/testcontainers/testcontainers-go/modules/compose"
+	"github.com/testcontainers/testcontainers-go/wait"
+	"log"
+	"os"
+	"path/filepath"
+	"testing"
 )
 
 // testAccProtoV6ProviderFactories are used to instantiate a provider during
@@ -24,15 +24,28 @@ var testAccProtoV6ProviderFactories = map[string]func() (tfprotov6.ProviderServe
 	"unifi": providerserver.NewProtocol6WithError(New("test")()),
 }
 
-var testClient *unifiClient
+var (
+	testClient  *unifiClient
+	testContext struct {
+		username string
+		password string
+		url      string
+	}
+)
+
+type logConsumer struct {
+	logger *log.Logger
+}
+
+func (c *logConsumer) Accept(l testcontainers.Log) {
+	c.logger.Printf(string(l.Content))
+}
 
 func testAccPreCheck(t *testing.T) {
-	// const user = "admin"
-	// const password = "admin"
-	// t.Setenv("UNIFI_USERNAME", user)
-	// t.Setenv("UNIFI_PASSWORD", password)
-	// t.Setenv("UNIFI_INSECURE", "true")
-	// t.Setenv("UNIFI_URL", "https://localhost:8443")
+	t.Setenv("UNIFI_USERNAME", testContext.username)
+	t.Setenv("UNIFI_PASSWORD", testContext.password)
+	t.Setenv("UNIFI_INSECURE", "true")
+	t.Setenv("UNIFI_URL", testContext.url)
 }
 
 func TestMain(m *testing.M) {
@@ -45,45 +58,74 @@ func TestMain(m *testing.M) {
 }
 
 func runAcceptanceTests(m *testing.M) int {
-	dc, err := compose.NewDockerCompose("../../docker-compose.yml")
-	if err != nil {
-		panic(err)
-	}
-
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	if err = dc.WithOsEnv().Up(ctx, compose.Wait(true)); err != nil {
-		panic(err)
+	unifiPackageURL := ""
+	if packageURL := os.Getenv("UNIFI_PACKAGE_URL"); packageURL != "" {
+		unifiPackageURL = packageURL
 	}
 
-	defer func() {
-		if err := dc.Down(context.Background(), compose.RemoveOrphans(true), compose.RemoveImagesLocal); err != nil {
-			panic(err)
-		}
-	}()
+	unifiStdOut := ""
+	var logConsumers []testcontainers.LogConsumer
+	if stdOut := os.Getenv("UNIFI_STDOUT"); stdOut != "" {
+		unifiStdOut = stdOut
+		logConsumers = append(logConsumers, &logConsumer{
+			logger: log.New(os.Stderr, "", log.LstdFlags),
+		})
+	}
 
-	container, err := dc.ServiceContainer(ctx, "unifi")
+	unifiVersion := "latest"
+	if version := os.Getenv("UNIFI_VERSION"); version != "" {
+		unifiVersion = version
+	}
+
+	demoModePath, err := filepath.Abs("../../scripts/init.d/demo-mode")
 	if err != nil {
 		panic(err)
 	}
 
-	// Dump the container logs on exit.
-	//
-	// TODO: Use https://pkg.go.dev/github.com/testcontainers/testcontainers-go#LogConsumer instead.
-	defer func() {
-		if os.Getenv("UNIFI_STDOUT") == "" {
-			return
-		}
+	r, err := os.Open(demoModePath)
+	if err != nil {
+		panic(err)
+	}
 
-		stream, err := container.Logs(ctx)
-		if err != nil {
+	req := testcontainers.ContainerRequest{
+		Name:  "unifi",
+		Image: "jacobalberty/unifi:" + unifiVersion,
+		Env: map[string]string{
+			"PKGURL":       unifiPackageURL,
+			"UNIFI_STDOUT": unifiStdOut,
+		},
+		ExposedPorts: []string{"8443/tcp"},
+		Files: []testcontainers.ContainerFile{
+			{
+				Reader:            r,
+				HostFilePath:      demoModePath, // will be discarded internally
+				ContainerFilePath: "/usr/local/unifi/init.d/demo-mode",
+				FileMode:          0o700,
+			},
+		},
+		LogConsumerCfg: &testcontainers.LogConsumerConfig{
+			Consumers: logConsumers,
+		},
+		WaitingFor: wait.ForAll(
+			wait.ForLog("<launcher> INFO  tomcat - systemd: Startup completed. Ready for watchdog keep-alive checking."),
+		),
+	}
+
+	container, err := testcontainers.GenericContainer(ctx, testcontainers.GenericContainerRequest{
+		ContainerRequest: req,
+		Started:          true,
+	})
+	if err != nil {
+		panic(err)
+	}
+
+	defer func() {
+		if err := container.Terminate(ctx); err != nil {
 			panic(err)
 		}
-
-		buffer := new(bytes.Buffer)
-		_, _ = buffer.ReadFrom(stream)
-		testcontainers.Logger.Printf("%s", buffer)
 	}()
 
 	endpoint, err := container.PortEndpoint(ctx, "8443/tcp", "https")
@@ -91,24 +133,9 @@ func runAcceptanceTests(m *testing.M) int {
 		panic(err)
 	}
 
-	const user = "admin"
-	const password = "admin"
-
-	if err = os.Setenv("UNIFI_USERNAME", user); err != nil {
-		panic(err)
-	}
-
-	if err = os.Setenv("UNIFI_PASSWORD", password); err != nil {
-		panic(err)
-	}
-
-	if err = os.Setenv("UNIFI_INSECURE", "true"); err != nil {
-		panic(err)
-	}
-
-	if err = os.Setenv("UNIFI_URL", endpoint); err != nil {
-		panic(err)
-	}
+	testContext.username = "admin"
+	testContext.password = "admin"
+	testContext.url = endpoint
 
 	testClient = &unifiClient{
 		Client: &unifi.Client{},
@@ -118,7 +145,8 @@ func runAcceptanceTests(m *testing.M) int {
 	if err = testClient.SetBaseURL(endpoint); err != nil {
 		panic(err)
 	}
-	if err = testClient.Login(ctx, user, password); err != nil {
+
+	if err = testClient.Login(ctx, testContext.username, testContext.password); err != nil {
 		panic(err)
 	}
 
