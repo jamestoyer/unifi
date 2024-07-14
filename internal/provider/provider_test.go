@@ -87,7 +87,7 @@ func runAcceptanceTests(m *testing.M) int {
 		}
 
 		buffer := new(bytes.Buffer)
-		buffer.ReadFrom(stream)
+		_, _ = buffer.ReadFrom(stream)
 		testcontainers.Logger.Printf("%s", buffer)
 	}()
 
