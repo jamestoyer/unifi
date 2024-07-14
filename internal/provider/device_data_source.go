@@ -36,6 +36,7 @@ type DeviceDataSourceModel struct {
 	ID            types.String                                 `tfsdk:"id"`
 	Adopted       types.Bool                                   `tfsdk:"adopted"`
 	Disabled      types.Bool                                   `tfsdk:"disabled"`
+	Model         types.String                                 `tfsdk:"model"`
 	Name          types.String                                 `tfsdk:"name"`
 	PortOverrides map[string]DevicePortOverrideDataSourceModel `tfsdk:"port_overrides"`
 	State         types.String                                 `tfsdk:"state"`
@@ -85,6 +86,9 @@ func (d *DeviceDataSource) Schema(ctx context.Context, req datasource.SchemaRequ
 				Computed: true,
 			},
 			"disabled": schema.BoolAttribute{
+				Computed: true,
+			},
+			"model": schema.StringAttribute{
 				Computed: true,
 			},
 			"name": schema.StringAttribute{
@@ -185,6 +189,7 @@ func (d *DeviceDataSource) Read(ctx context.Context, req datasource.ReadRequest,
 	data.ID = types.StringValue(device.ID)
 	data.Adopted = types.BoolValue(device.Adopted)
 	data.Disabled = types.BoolValue(device.Disabled)
+	data.Model = types.StringValue(device.Model)
 	data.Name = types.StringValue(device.Name)
 	data.State = types.StringValue(device.State.String())
 	data.Type = types.StringValue(device.Type)
