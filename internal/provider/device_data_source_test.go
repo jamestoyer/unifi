@@ -18,6 +18,7 @@ func TestAccDeviceDataSource(t *testing.T) {
 				Check: resource.ComposeAggregateTestCheckFunc(
 					resource.TestCheckResourceAttr("data.unifi_device.test", "mac", "dc:9f:db:00:00:01"),
 					resource.TestCheckResourceAttr("data.unifi_device.test", "type", "ugw"),
+					resource.TestCheckResourceAttr("data.unifi_device.test", "type", "ugw"),
 				),
 			},
 		},
