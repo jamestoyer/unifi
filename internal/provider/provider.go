@@ -200,6 +200,7 @@ func (p *UnifiProvider) Resources(ctx context.Context) []func() resource.Resourc
 func (p *UnifiProvider) DataSources(ctx context.Context) []func() datasource.DataSource {
 	return []func() datasource.DataSource{
 		NewDeviceDataSource,
+		NewDeviceSwitchDataSource,
 	}
 }
 

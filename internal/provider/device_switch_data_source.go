@@ -36,16 +36,17 @@ type DeviceSwitchDataSourceModel struct {
 	ID      types.String `tfsdk:"id"`
 	Adopted types.Bool   `tfsdk:"adopted"`
 	// ConfigNetwork          DeviceSwitchConfigNetworkDataSourceModel `tfsdk:"config_network"`
+	Disabled               types.Bool   `tfsdk:"disabled"`
 	Dot1XFallbackNetworkID types.String `tfsdk:"dot1x_fallback_networkconf_id"`
 	Dot1XPortctrlEnabled   types.Bool   `tfsdk:"dot1x_portctrl_enabled"`
 	FlowctrlEnabled        types.Bool   `tfsdk:"flowctrl_enabled"`
 	JumboframeEnabled      types.Bool   `tfsdk:"jumboframe_enabled"`
-	MgmtNetworkID          types.String `tfsdk:"mgmt_network_id"` // [\d\w]+
+	MgmtNetworkID          types.String `tfsdk:"mgmt_network_id"`
 	Model                  types.String `tfsdk:"model"`
 	Name                   types.String `tfsdk:"name"`
 	// PortOverrides map[string]DeviceSwitchPortOverrideDataSourceModel `tfsdk:"port_overrides"`
-	SnmpContact  types.String `tfsdk:"snmp_contact"`  // .{0,255}
-	SnmpLocation types.String `tfsdk:"snmp_location"` // .{0,255}
+	SnmpContact  types.String `tfsdk:"snmp_contact"`
+	SnmpLocation types.String `tfsdk:"snmp_location"`
 	State        types.String `tfsdk:"state"`
 	StpPriority  types.String `tfsdk:"stp_priority"`
 	StpVersion   types.String `tfsdk:"stp_version"`
@@ -333,6 +334,7 @@ func (d *DeviceSwitchDataSource) Read(ctx context.Context, req datasource.ReadRe
 
 	data.ID = types.StringValue(device.ID)
 	data.Adopted = types.BoolValue(device.Adopted)
+	data.Disabled = types.BoolValue(device.Disabled)
 	data.Dot1XFallbackNetworkID = types.StringValue(device.Dot1XFallbackNetworkID)
 	data.Dot1XPortctrlEnabled = types.BoolValue(device.Dot1XPortctrlEnabled)
 	data.FlowctrlEnabled = types.BoolValue(device.FlowctrlEnabled)
