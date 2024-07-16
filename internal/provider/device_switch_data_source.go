@@ -7,13 +7,15 @@ import (
 	"context"
 	"fmt"
 	"github.com/hashicorp/terraform-plugin-framework-nettypes/iptypes"
+	"github.com/hashicorp/terraform-plugin-framework-validators/int32validator"
 	"github.com/hashicorp/terraform-plugin-framework-validators/stringvalidator"
+	"github.com/hashicorp/terraform-plugin-framework/attr"
 	"github.com/hashicorp/terraform-plugin-framework/datasource"
 	"github.com/hashicorp/terraform-plugin-framework/datasource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/schema/validator"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/hashicorp/terraform-plugin-log/tflog"
-	"regexp"
+	"strconv"
 )
 
 // Ensure provider defined types fully satisfy framework interfaces.
@@ -35,26 +37,24 @@ type DeviceSwitchDataSourceModel struct {
 	Site types.String `tfsdk:"site"`
 
 	// Read Only
-	ID                     types.String                              `tfsdk:"id"`
-	Adopted                types.Bool                                `tfsdk:"adopted"`
-	ConfigNetwork          *DeviceSwitchConfigNetworkDataSourceModel `tfsdk:"config_network"`
-	Disabled               types.Bool                                `tfsdk:"disabled"`
-	Dot1XFallbackNetworkID types.String                              `tfsdk:"dot1x_fallback_networkconf_id"`
-	Dot1XPortctrlEnabled   types.Bool                                `tfsdk:"dot1x_portctrl_enabled"`
-	FlowctrlEnabled        types.Bool                                `tfsdk:"flowctrl_enabled"`
-	JumboframeEnabled      types.Bool                                `tfsdk:"jumboframe_enabled"`
-	MgmtNetworkID          types.String                              `tfsdk:"mgmt_network_id"`
-	Model                  types.String                              `tfsdk:"model"`
-	Name                   types.String                              `tfsdk:"name"`
-	// PortOverrides map[string]DeviceSwitchPortOverrideDataSourceModel `tfsdk:"port_overrides"`
-	SnmpContact  types.String `tfsdk:"snmp_contact"`
-	SnmpLocation types.String `tfsdk:"snmp_location"`
-	State        types.String `tfsdk:"state"`
-	StpPriority  types.String `tfsdk:"stp_priority"`
-	StpVersion   types.String `tfsdk:"stp_version"`
-	Type         types.String `tfsdk:"type"`
-
-	// PortOverrides          []DevicePortOverrides `json:"port_overrides"`
+	ID                     types.String                                       `tfsdk:"id"`
+	Adopted                types.Bool                                         `tfsdk:"adopted"`
+	ConfigNetwork          *DeviceSwitchConfigNetworkDataSourceModel          `tfsdk:"config_network"`
+	Disabled               types.Bool                                         `tfsdk:"disabled"`
+	Dot1XFallbackNetworkID types.String                                       `tfsdk:"dot1x_fallback_networkconf_id"`
+	Dot1XPortctrlEnabled   types.Bool                                         `tfsdk:"dot1x_portctrl_enabled"`
+	FlowctrlEnabled        types.Bool                                         `tfsdk:"flowctrl_enabled"`
+	JumboframeEnabled      types.Bool                                         `tfsdk:"jumboframe_enabled"`
+	MgmtNetworkID          types.String                                       `tfsdk:"mgmt_network_id"`
+	Model                  types.String                                       `tfsdk:"model"`
+	Name                   types.String                                       `tfsdk:"name"`
+	PortOverrides          map[string]DeviceSwitchPortOverrideDataSourceModel `tfsdk:"port_overrides"`
+	SnmpContact            types.String                                       `tfsdk:"snmp_contact"`
+	SnmpLocation           types.String                                       `tfsdk:"snmp_location"`
+	State                  types.String                                       `tfsdk:"state"`
+	StpPriority            types.String                                       `tfsdk:"stp_priority"`
+	StpVersion             types.String                                       `tfsdk:"stp_version"`
+	Type                   types.String                                       `tfsdk:"type"`
 }
 
 type DeviceSwitchConfigNetworkDataSourceModel struct {
@@ -68,87 +68,75 @@ type DeviceSwitchConfigNetworkDataSourceModel struct {
 	Type           types.String        `tfsdk:"type"`
 }
 
-//
-// type DeviceSwitchPortOverrideDataSourceModel struct {
-// 	AggregateNumPorts        types.Int32  `tfsdk:"aggregate_num_ports"`
-// 	ExcludedNetworkIDs       types.List   `tfsdk:"excluded_network_ids"`
-// 	Name                     types.String `tfsdk:"name"`
-// 	NativeNetworkID          types.String `tfsdk:"native_network_id"`
-// 	OpMode                   types.String `tfsdk:"op_mode"`
-// 	POEMode                  types.String `tfsdk:"poe_mode"`
-// 	PortProfileID            types.String `tfsdk:"port_profile_id"`
-// 	PortSecurityEnabled      types.Bool   `tfsdk:"port_security_enabled"`
-// 	PortSecurityMACAddresses types.List   `tfsdk:"port_security_mac_addresses"`
-//
-// 	AggregateNumPorts            int              `json:"aggregate_num_ports,omitempty"` // [1-8]
-// 	Autoneg                      bool             `json:"autoneg,omitempty"`
-// 	Dot1XCtrl                    string           `json:"dot1x_ctrl,omitempty"`             // auto|force_authorized|force_unauthorized|mac_based|multi_host
-// 	Dot1XIDleTimeout             int              `json:"dot1x_idle_timeout,omitempty"`     // [0-9]|[1-9][0-9]{1,3}|[1-5][0-9]{4}|6[0-4][0-9]{3}|65[0-4][0-9]{2}|655[0-2][0-9]|6553[0-5]
-// 	EgressRateLimitKbps          int              `json:"egress_rate_limit_kbps,omitempty"` // 6[4-9]|[7-9][0-9]|[1-9][0-9]{2,6}
-// 	EgressRateLimitKbpsEnabled   bool             `json:"egress_rate_limit_kbps_enabled,omitempty"`
-// 	ExcludedNetworkIDs           []string         `json:"excluded_networkconf_ids,omitempty"`
-// 	FecMode                      string           `json:"fec_mode,omitempty"` // rs-fec|fc-fec|default|disabled
-// 	Forward                      string           `json:"forward,omitempty"`  // all|native|customize|disabled
-// 	FullDuplex                   bool             `json:"full_duplex,omitempty"`
-// 	Isolation                    bool             `json:"isolation,omitempty"`
-// 	LldpmedEnabled               bool             `json:"lldpmed_enabled,omitempty"`
-// 	LldpmedNotifyEnabled         bool             `json:"lldpmed_notify_enabled,omitempty"`
-// 	MirrorPortIDX                int              `json:"mirror_port_idx,omitempty"` // [1-9]|[1-4][0-9]|5[0-2]
-// 	NATiveNetworkID              string           `json:"native_networkconf_id,omitempty"`
-// 	Name                         string           `json:"name,omitempty"`     // .{0,128}
-// 	OpMode                       string           `json:"op_mode,omitempty"`  // switch|mirror|aggregate
-// 	PoeMode                      string           `json:"poe_mode,omitempty"` // auto|pasv24|passthrough|off
-// 	PortIDX                      int              `json:"port_idx,omitempty"` // [1-9]|[1-4][0-9]|5[0-2]
-// 	PortKeepaliveEnabled         bool             `json:"port_keepalive_enabled,omitempty"`
-// 	PortProfileID                string           `json:"portconf_id,omitempty"` // [\d\w]+
-// 	PortSecurityEnabled          bool             `json:"port_security_enabled,omitempty"`
-// 	PortSecurityMACAddress       []string         `json:"port_security_mac_address,omitempty"` // ^([0-9A-Fa-f]{2}[:]){5}([0-9A-Fa-f]{2})$
-// 	PriorityQueue1Level          int              `json:"priority_queue1_level,omitempty"`     // [0-9]|[1-9][0-9]|100
-// 	PriorityQueue2Level          int              `json:"priority_queue2_level,omitempty"`     // [0-9]|[1-9][0-9]|100
-// 	PriorityQueue3Level          int              `json:"priority_queue3_level,omitempty"`     // [0-9]|[1-9][0-9]|100
-// 	PriorityQueue4Level          int              `json:"priority_queue4_level,omitempty"`     // [0-9]|[1-9][0-9]|100
-// 	QOSProfile                   DeviceQOSProfile `json:"qos_profile,omitempty"`
-// 	SettingPreference            string           `json:"setting_preference,omitempty"` // auto|manual
-// 	Speed                        int              `json:"speed,omitempty"`              // 10|100|1000|2500|5000|10000|20000|25000|40000|50000|100000
-// 	StormctrlBroadcastastEnabled bool             `json:"stormctrl_bcast_enabled,omitempty"`
-// 	StormctrlBroadcastastLevel   int              `json:"stormctrl_bcast_level,omitempty"` // [0-9]|[1-9][0-9]|100
-// 	StormctrlBroadcastastRate    int              `json:"stormctrl_bcast_rate,omitempty"`  // [0-9]|[1-9][0-9]{1,6}|1[0-3][0-9]{6}|14[0-7][0-9]{5}|148[0-7][0-9]{4}|14880000
-// 	StormctrlMcastEnabled        bool             `json:"stormctrl_mcast_enabled,omitempty"`
-// 	StormctrlMcastLevel          int              `json:"stormctrl_mcast_level,omitempty"` // [0-9]|[1-9][0-9]|100
-// 	StormctrlMcastRate           int              `json:"stormctrl_mcast_rate,omitempty"`  // [0-9]|[1-9][0-9]{1,6}|1[0-3][0-9]{6}|14[0-7][0-9]{5}|148[0-7][0-9]{4}|14880000
-// 	StormctrlType                string           `json:"stormctrl_type,omitempty"`        // level|rate
-// 	StormctrlUcastEnabled        bool             `json:"stormctrl_ucast_enabled,omitempty"`
-// 	StormctrlUcastLevel          int              `json:"stormctrl_ucast_level,omitempty"` // [0-9]|[1-9][0-9]|100
-// 	StormctrlUcastRate           int              `json:"stormctrl_ucast_rate,omitempty"`  // [0-9]|[1-9][0-9]{1,6}|1[0-3][0-9]{6}|14[0-7][0-9]{5}|148[0-7][0-9]{4}|14880000
-// 	StpPortMode                  bool             `json:"stp_port_mode,omitempty"`
-// 	TaggedVLANMgmt               string           `json:"tagged_vlan_mgmt,omitempty"` // auto|block_all|custom
-// 	VoiceNetworkID               string           `json:"voice_networkconf_id,omitempty"`
+type DeviceSwitchPortOverrideDataSourceModel struct {
+	AggregateNumPorts          types.Int32  `tfsdk:"aggregate_num_ports"`
+	AutoNegotiate              types.Bool   `tfsdk:"auto_negotiate"`
+	Dot1XCtrl                  types.String `tfsdk:"dot1x_ctrl"`
+	Dot1XIDleTimeout           types.Int32  `tfsdk:"dot1x_idle_timeout"`
+	EgressRateLimitKbps        types.Int32  `tfsdk:"egress_rate_limit_kbps"`
+	EgressRateLimitKbpsEnabled types.Bool   `tfsdk:"egress_rate_limit_kbps_enabled"`
+	ExcludedNetworkIDs         types.List   `tfsdk:"excluded_network_ids"`
+	// FECMode                      types.String `tfsdk:"fec_mode"`
+	Forward             types.String `tfsdk:"forward"`
+	FullDuplex          types.Bool   `tfsdk:"full_duplex"`
+	Isolation           types.Bool   `tfsdk:"isolation"`
+	LLPMEDEnabled       types.Bool   `tfsdk:"lldp_med_enabled"`
+	LLPMEDNotifyEnabled types.Bool   `tfsdk:"lldp_med_notify_enabled"`
+	MirrorPortIDX       types.Int32  `tfsdk:"mirror_port_idx"`
+	Name                types.String `tfsdk:"name"`
+	NativeNetworkID     types.String `tfsdk:"native_network_id"`
+	Operation           types.String `tfsdk:"operation"`
+	PriorityQueue1Level types.Int32  `tfsdk:"priority_queue1_level"`
+	PriorityQueue2Level types.Int32  `tfsdk:"priority_queue2_level"`
+	PriorityQueue3Level types.Int32  `tfsdk:"priority_queue3_level"`
+	PriorityQueue4Level types.Int32  `tfsdk:"priority_queue4_level"`
+	POEMode             types.String `tfsdk:"poe_mode"`
+	// PortKeepaliveEnabled         types.Bool   `tfsdk:"port_keepalive_enabled"`
+	PortProfileID            types.String `tfsdk:"port_profile_id"`
+	PortSecurityEnabled      types.Bool   `tfsdk:"port_security_enabled"`
+	PortSecurityMACAddresses types.List   `tfsdk:"port_security_mac_addresses"`
+	// QOSProfile                   DeviceSwitchPortOverrideQOSProfileDataSourceModel `tfsdk:"qos_profile"`
+	SettingPreference            types.String `tfsdk:"setting_preference"`
+	Speed                        types.Int32  `tfsdk:"speed"`
+	StormControlBroadcastEnabled types.Bool   `tfsdk:"storm_control_broadcast_enabled"`
+	StormControlBroadcastLevel   types.Int32  `tfsdk:"storm_control_broadcast_level"`
+	StormControlBroadcastRate    types.Int32  `tfsdk:"storm_control_broadcast_rate"`
+	StormControlMulticastEnabled types.Bool   `tfsdk:"storm_control_multicast_enabled"`
+	StormControlMulticastLevel   types.Int32  `tfsdk:"storm_control_multicast_level"`
+	StormControlMulticastRate    types.Int32  `tfsdk:"storm_control_mulitcast_rate"`
+	StormControlType             types.String `tfsdk:"storm_control_type"`
+	StormControlUnicastEnabled   types.Bool   `tfsdk:"storm_control_unicast_enabled"`
+	StormControlUnicastLevel     types.Int32  `tfsdk:"storm_control_unicast_level"`
+	StormControlUnicastRate      types.Int32  `tfsdk:"storm_control_unicast_rate"`
+	STPPortMode                  types.Bool   `tfsdk:"stp_port_mode"`
+	// TaggedVLANMgmt               types.String `tfsdk:"tagged_vlan_mgmt"`
+	VoiceNetworkID types.String `tfsdk:"voice_networkconf_id"`
+}
+
+// type DeviceSwitchPortOverrideQOSProfileDataSourceModel struct {
+// 	QOSPolicies    []DeviceSwitchPortOverrideQOSPoliciesDataSourceModel `tfsdk:"qos_policies"`
+// 	QOSProfileMode types.String                                         `tfsdk:"qos_profile_mode"`
 // }
 //
-// type DeviceQOSProfile struct {
-// 	QOSPolicies    []DeviceQOSPolicies `json:"qos_policies,omitempty"`
-// 	QOSProfileMode string              `json:"qos_profile_mode,omitempty"` // custom|unifi_play|aes67_audio|crestron_audio_video|dante_audio|ndi_aes67_audio|ndi_dante_audio|qsys_audio_video|qsys_video_dante_audio|sdvoe_aes67_audio|sdvoe_dante_audio|shure_audio
+// type DeviceSwitchPortOverrideQOSPoliciesDataSourceModel struct {
+// 	QOSMarking  DeviceSwitchPortOverrideQOSMarkingDataSourceModel  `tfsdk:"qos_marking"`
+// 	QOSMatching DeviceSwitchPortOverrideQOSMatchingDataSourceModel `tfsdk:"qos_matching"`
 // }
 //
-// type DeviceQOSPolicies struct {
-// 	QOSMarking  DeviceQOSMarking  `json:"qos_marking,omitempty"`
-// 	QOSMatching DeviceQOSMatching `json:"qos_matching,omitempty"`
+// type DeviceSwitchPortOverrideQOSMarkingDataSourceModel struct {
+// 	CosCode          types.Int32 `tfsdk:"cos_code"`
+// 	DscpCode         types.Int32 `tfsdk:"dscp_code"`
+// 	IPPrecedenceCode types.Int32 `tfsdk:"ip_precedence_code"`
+// 	Queue            types.Int32 `tfsdk:"queue"`
 // }
 //
-// type DeviceQOSMarking struct {
-// 	CosCode          int `json:"cos_code,omitempty"`           // [0-7]
-// 	DscpCode         int `json:"dscp_code,omitempty"`          // 0|8|16|24|32|40|48|56|10|12|14|18|20|22|26|28|30|34|36|38|44|46
-// 	IPPrecedenceCode int `json:"ip_precedence_code,omitempty"` // [0-7]
-// 	Queue            int `json:"queue,omitempty"`              // [0-7]
-// }
-//
-// type DeviceQOSMatching struct {
-// 	CosCode          int    `json:"cos_code,omitempty"`           // [0-7]
-// 	DscpCode         int    `json:"dscp_code,omitempty"`          // [0-9]|[1-5][0-9]|6[0-3]
-// 	DstPort          int    `json:"dst_port,omitempty"`           // [0-9]|[1-9][0-9]|[1-9][0-9][0-9]|[1-9][0-9][0-9][0-9]|[1-5][0-9][0-9][0-9][0-9]|6[0-4][0-9][0-9][0-9]|65[0-4][0-9][0-9]|655[0-2][0-9]|6553[0-4]|65535
-// 	IPPrecedenceCode int    `json:"ip_precedence_code,omitempty"` // [0-7]
-// 	Protocol         string `json:"protocol,omitempty"`           // ([0-9]|[1-9][0-9]|1[0-9][0-9]|2[0-4][0-9]|25[0-5])|ah|ax.25|dccp|ddp|egp|eigrp|encap|esp|etherip|fc|ggp|gre|hip|hmp|icmp|idpr-cmtp|idrp|igmp|igp|ip|ipcomp|ipencap|ipip|ipv6|ipv6-frag|ipv6-icmp|ipv6-nonxt|ipv6-opts|ipv6-route|isis|iso-tp4|l2tp|manet|mobility-header|mpls-in-ip|ospf|pim|pup|rdp|rohc|rspf|rsvp|sctp|shim6|skip|st|tcp|udp|udplite|vmtp|vrrp|wesp|xns-idp|xtp
-// 	SrcPort          int    `json:"src_port,omitempty"`           // [0-9]|[1-9][0-9]|[1-9][0-9][0-9]|[1-9][0-9][0-9][0-9]|[1-5][0-9][0-9][0-9][0-9]|6[0-4][0-9][0-9][0-9]|65[0-4][0-9][0-9]|655[0-2][0-9]|6553[0-4]|65535
+// type DeviceSwitchPortOverrideQOSMatchingDataSourceModel struct {
+// 	CosCode          types.Int32  `tfsdk:"cos_code"`
+// 	DscpCode         types.Int32  `tfsdk:"dscp_code"`
+// 	DstPort          types.Int32  `tfsdk:"dst_port"`
+// 	IPPrecedenceCode types.Int32  `tfsdk:"ip_precedence_code"`
+// 	Protocol         types.String `tfsdk:"protocol"`
+// 	SrcPort          types.Int32  `tfsdk:"src_port"`
 // }
 
 func (d *DeviceSwitchDataSource) Metadata(ctx context.Context, req datasource.MetadataRequest, resp *datasource.MetadataResponse) {
@@ -183,150 +171,244 @@ func (d *DeviceSwitchDataSource) Schema(ctx context.Context, req datasource.Sche
 				Computed: true,
 			},
 			"config_network": schema.SingleNestedAttribute{
-				Optional: true,
+				Computed: true,
 				Attributes: map[string]schema.Attribute{
 					"alternative_dns": schema.StringAttribute{
-						Optional:   true,
-						CustomType: iptypes.IPv4AddressType{},
+						Computed: true,
 					},
 					"bonding_enabled": schema.BoolAttribute{
-						Optional: true,
+						Computed: true,
 					},
 					"dns_suffix": schema.StringAttribute{
-						Optional: true,
+						Computed: true,
 					},
 					"gateway": schema.StringAttribute{
-						Optional:   true,
-						CustomType: iptypes.IPv4AddressType{},
+						Computed: true,
 					},
 					"ip": schema.StringAttribute{
-						Optional:   true,
-						CustomType: iptypes.IPv4AddressType{},
+						Computed: true,
 					},
 					"netmask": schema.StringAttribute{
-						Optional:   true,
-						CustomType: iptypes.IPv4AddressType{},
-						Validators: []validator.String{
-							stringvalidator.RegexMatches(regexp.MustCompile("^((128|192|224|240|248|252|254)\\.0\\.0\\.0)|(255\\.(((0|128|192|224|240|248|252|254)\\.0\\.0)|(255\\.(((0|128|192|224|240|248|252|254)\\.0)|255\\.(0|128|192|224|240|248|252|254)))))$"), "invalid net mask"),
-						},
+						Computed: true,
 					},
 					"preferred_dns": schema.StringAttribute{
-						Optional:   true,
-						CustomType: iptypes.IPv4AddressType{},
+						Computed: true,
 					},
 					"type": schema.StringAttribute{
-						Optional: true,
-						Validators: []validator.String{
-							stringvalidator.OneOf("dhcp", "static"),
-						},
+						Computed: true,
 					},
 				},
 			},
 			"disabled": schema.BoolAttribute{
-				Optional: true,
+				Computed: true,
 			},
 			"dot1x_fallback_networkconf_id": schema.StringAttribute{
-				Optional: true,
-				Validators: []validator.String{
-					stringvalidator.RegexMatches(regexp.MustCompile("^([\\d\\w]+|)$"), "must only contain letters and numbers or must be empty"),
-				},
+				Computed: true,
 			},
 			"dot1x_portctrl_enabled": schema.BoolAttribute{
-				Optional: true,
+				Computed: true,
 			},
 			"flowctrl_enabled": schema.BoolAttribute{
-				Optional: true,
+				Computed: true,
 			},
 			"jumboframe_enabled": schema.BoolAttribute{
-				Optional: true,
+				Computed: true,
 			},
 			"mgmt_network_id": schema.StringAttribute{
-				Optional: true,
-				Validators: []validator.String{
-					stringvalidator.RegexMatches(regexp.MustCompile("^([\\d\\w]+)$"), "must only contain letters and numbers"),
-				},
+				Computed: true,
 			},
 			"model": schema.StringAttribute{
 				Computed: true,
 			},
 			"name": schema.StringAttribute{
-				Optional: true,
-				Validators: []validator.String{
-					stringvalidator.LengthBetween(0, 128),
+				Computed: true,
+			},
+			"port_overrides": schema.MapNestedAttribute{
+				Computed: true,
+				NestedObject: schema.NestedAttributeObject{
+					Attributes: map[string]schema.Attribute{
+						"aggregate_num_ports": schema.Int32Attribute{
+							Optional: true,
+							Validators: []validator.Int32{
+								int32validator.Between(1, 8),
+							},
+						},
+						"auto_negotiate": schema.BoolAttribute{
+							Computed: true,
+						},
+						"dot1x_ctrl": schema.StringAttribute{
+							Computed: true,
+						},
+						"dot1x_idle_timeout": schema.Int32Attribute{
+							Computed: true,
+						},
+						"egress_rate_limit_kbps": schema.Int32Attribute{
+							MarkdownDescription: "Sets a port's maximum rate of data transfer.",
+							Computed:            true,
+						},
+						"egress_rate_limit_kbps_enabled": schema.BoolAttribute{
+							Computed: true,
+						},
+						"excluded_network_ids": schema.ListAttribute{
+							ElementType: types.StringType,
+							Optional:    true,
+						},
+						"forward": schema.StringAttribute{
+							Computed: true,
+						},
+						"full_duplex": schema.BoolAttribute{
+							Computed: true,
+						},
+						"isolation": schema.BoolAttribute{
+							MarkdownDescription: "Allows you to prohibit traffic between isolated ports. This only " +
+								"applies to ports on the same device.",
+							Computed: true,
+						},
+						"lldp_med_enabled": schema.BoolAttribute{
+							MarkdownDescription: "Extension for LLPD user alongside the voice VLAN feature to " +
+								"discover the presence of a VoIP phone. Disabling LLPD-MED will also disable the " +
+								"Voice VLAN.",
+							Computed: true,
+						},
+						"lldp_med_notify_enabled": schema.BoolAttribute{
+							Computed: true,
+						},
+						"mirror_port_idx": schema.Int32Attribute{
+							Computed: true,
+						},
+						"name": schema.StringAttribute{
+							Required: true,
+							Validators: []validator.String{
+								stringvalidator.LengthBetween(0, 128),
+							},
+						},
+						"native_network_id": schema.StringAttribute{
+							MarkdownDescription: "The native network used for VLAN traffic, i.e. not tagged with a " +
+								"VLAN ID. Untagged traffic from devices connected to this port will be placed on to " +
+								"the selected VLAN",
+							Optional: true,
+						},
+						"operation": schema.StringAttribute{
+							Required: true,
+							Validators: []validator.String{
+								stringvalidator.OneOf("switch", "mirror", "aggregate"),
+							},
+						},
+						"poe_mode": schema.StringAttribute{
+							Computed: true,
+						},
+						"port_profile_id": schema.StringAttribute{
+							Computed: true,
+						},
+						"port_security_enabled": schema.BoolAttribute{
+							Computed: true,
+						},
+						"port_security_mac_addresses": schema.ListAttribute{
+							ElementType: types.StringType,
+							Computed:    true,
+						},
+						"priority_queue1_level": schema.Int32Attribute{
+							Computed: true,
+						},
+						"priority_queue2_level": schema.Int32Attribute{
+							Computed: true,
+						},
+						"priority_queue3_level": schema.Int32Attribute{
+							Computed: true,
+						},
+						"priority_queue4_level": schema.Int32Attribute{
+							Computed: true,
+						},
+						"setting_preference": schema.StringAttribute{
+							Computed: true,
+						},
+						"speed": schema.Int32Attribute{
+							Computed: true,
+						},
+						"storm_control_broadcast_enabled": schema.BoolAttribute{
+							Computed: true,
+						},
+						"storm_control_broadcast_level": schema.Int32Attribute{
+							Computed: true,
+						},
+						"storm_control_broadcast_rate": schema.Int32Attribute{
+							Computed: true,
+						},
+						"storm_control_multicast_enabled": schema.BoolAttribute{
+							Computed: true,
+						},
+						"storm_control_multicast_level": schema.Int32Attribute{
+							Computed: true,
+						},
+						"storm_control_mulitcast_rate": schema.Int32Attribute{
+							Computed: true,
+						},
+						"storm_control_type": schema.StringAttribute{
+							Computed: true,
+						},
+						"storm_control_unicast_enabled": schema.BoolAttribute{
+							Computed: true,
+						},
+						"storm_control_unicast_level": schema.Int32Attribute{
+							Computed: true,
+						},
+						"storm_control_unicast_rate": schema.Int32Attribute{
+							Computed: true,
+						},
+						"stp_port_mode": schema.BoolAttribute{
+							Computed: true,
+						},
+						"voice_networkconf_id": schema.StringAttribute{
+							MarkdownDescription: "Uses LLPD-MED to place a VoIP phone on the specified VLAN. Devices " +
+								"connected to the phone are placed in the Native VLAN.",
+							Computed: true,
+						},
+
+						// TODO: (jtoyer) Update the client to include these fields
+						// "fec_mode": schema.StringAttribute{
+						// 	Computed: true,
+						// },
+						// "port_keepalive_enabled": schema.StringAttribute{
+						// 	Computed: true,
+						// },
+						// "qos_profile": schema.SingleNestedAttribute{
+						// 	Computed: true,
+						// 	Attributes: map[string]schema.Attribute{
+						// 		"qos_policies": schema.SetNestedAttribute{
+						// 			Computed: true,
+						// 			NestedObject: schema.NestedAttributeObject{
+						// 				Attributes: map[string]schema.Attribute{},
+						// 			},
+						// 		},
+						// 		"qos_profile_mode": schema.StringAttribute{
+						// 			Computed: true,
+						// 		},
+						// 	},
+						// },
+						// "tagged_vlan_mgmt": schema.StringAttribute{
+						// 	Computed: true,
+						// },
+					},
 				},
 			},
-			// "port_overrides": schema.MapNestedAttribute{
-			// 	Computed: true,
-			// 	NestedObject: schema.NestedAttributeObject{
-			// 		Attributes: map[string]schema.Attribute{
-			// 			"aggregate_num_ports": schema.Int32Attribute{
-			// 				Computed: true,
-			// 			},
-			// 			"excluded_network_ids": schema.ListAttribute{
-			// 				ElementType: types.StringType,
-			// 				Computed:    true,
-			// 			},
-			// 			"name": schema.StringAttribute{
-			// 				Computed: true,
-			// 			},
-			// 			"native_network_id": schema.StringAttribute{
-			// 				MarkdownDescription: "The native network used for VLAN traffic, i.e. not tagged with a " +
-			// 					"VLAN ID. Untagged traffic from devices connected to this port will be placed on to " +
-			// 					"the selected VLAN",
-			// 				Computed: true,
-			// 			},
-			// 			"op_mode": schema.StringAttribute{
-			// 				Computed: true,
-			// 			},
-			// 			"poe_mode": schema.StringAttribute{
-			// 				Computed: true,
-			// 			},
-			// 			"port_profile_id": schema.StringAttribute{
-			// 				Computed: true,
-			// 			},
-			// 			"port_security_enabled": schema.BoolAttribute{
-			// 				Computed: true,
-			// 			},
-			// 			"port_security_mac_addresses": schema.ListAttribute{
-			// 				ElementType: types.StringType,
-			// 				Computed:    true,
-			// 			},
-			// 		},
-			// 	},
-			// },
 			"snmp_contact": schema.StringAttribute{
-				Optional: true,
-				Validators: []validator.String{
-					stringvalidator.LengthBetween(0, 255),
-				},
+				Computed: true,
 			},
 			"snmp_location": schema.StringAttribute{
 				Optional: true,
-				Validators: []validator.String{
-					stringvalidator.LengthBetween(0, 255),
-				},
 			},
 			"state": schema.StringAttribute{
 				Computed: true,
 			},
 			"stp_priority": schema.StringAttribute{
-				Optional: true,
-				Validators: []validator.String{
-					stringvalidator.OneOf("0", "4096", "8192", "12288", "16384", "20480", "24576", "28672", "32768", "36864", "40960", "45056", "49152", "53248", "57344", "61440"),
-				},
+				Computed: true,
 			},
 			"stp_version": schema.StringAttribute{
-				Optional: true,
-				Validators: []validator.String{
-					stringvalidator.OneOf("stp", "rstp", "disabled"),
-					stringvalidator.RegexMatches(regexp.MustCompile("^([\\d\\w]+|)$"), "must only contain letters and numbers or must be empty"),
-				},
+				Computed: true,
 			},
 			"type": schema.StringAttribute{
 				Computed: true,
 			},
-
-			// "config_network": schema.StringAttribute{},
 		},
 	}
 }
@@ -415,40 +497,78 @@ func (d *DeviceSwitchDataSource) Read(ctx context.Context, req datasource.ReadRe
 		data.ConfigNetwork.Netmask = iptypes.NewIPv4AddressValue(device.ConfigNetwork.Netmask)
 	}
 
-	// data.PortOverrides = make(map[string]DeviceSwitchPortOverrideDataSourceModel, len(device.PortOverrides))
-	// for _, override := range device.PortOverrides {
-	// 	excludedNetworkIDs := types.ListNull(types.StringType)
-	// 	if override.ExcludedNetworkIDs != nil {
-	// 		var attrs []attr.Value
-	// 		for _, id := range override.ExcludedNetworkIDs {
-	// 			attrs = append(attrs, types.StringValue(id))
-	// 		}
-	//
-	// 		excludedNetworkIDs = types.ListValueMust(types.StringType, attrs)
-	// 	}
-	//
-	// 	portSecurityMACAddresses := types.ListNull(types.StringType)
-	// 	if override.PortSecurityMACAddress != nil {
-	// 		var attrs []attr.Value
-	// 		for _, id := range override.PortSecurityMACAddress {
-	// 			attrs = append(attrs, types.StringValue(id))
-	// 		}
-	//
-	// 		portSecurityMACAddresses = types.ListValueMust(types.StringType, attrs)
-	// 	}
-	//
-	// 	data.PortOverrides[strconv.Itoa(override.PortIDX)] = DeviceSwitchPortOverrideDataSourceModel{
-	// 		AggregateNumPorts:        types.Int32Value(int32(override.AggregateNumPorts)),
-	// 		ExcludedNetworkIDs:       excludedNetworkIDs,
-	// 		Name:                     types.StringValue(override.Name),
-	// 		NativeNetworkID:          types.StringValue(override.NATiveNetworkID),
-	// 		OpMode:                   types.StringValue(override.OpMode),
-	// 		POEMode:                  types.StringValue(override.PoeMode),
-	// 		PortProfileID:            types.StringValue(override.PortProfileID),
-	// 		PortSecurityEnabled:      types.BoolValue(override.PortSecurityEnabled),
-	// 		PortSecurityMACAddresses: portSecurityMACAddresses,
-	// 	}
-	// }
+	data.PortOverrides = make(map[string]DeviceSwitchPortOverrideDataSourceModel, len(device.PortOverrides))
+	for _, override := range device.PortOverrides {
+		excludedNetworkIDs := types.ListNull(types.StringType)
+		if override.ExcludedNetworkIDs != nil {
+			var attrs []attr.Value
+			for _, id := range override.ExcludedNetworkIDs {
+				attrs = append(attrs, types.StringValue(id))
+			}
+
+			excludedNetworkIDs = types.ListValueMust(types.StringType, attrs)
+		}
+
+		portSecurityMACAddresses := types.ListNull(types.StringType)
+		if override.PortSecurityMACAddress != nil {
+			var attrs []attr.Value
+			for _, id := range override.PortSecurityMACAddress {
+				attrs = append(attrs, types.StringValue(id))
+			}
+
+			portSecurityMACAddresses = types.ListValueMust(types.StringType, attrs)
+		}
+
+		data.PortOverrides[strconv.Itoa(override.PortIDX)] = DeviceSwitchPortOverrideDataSourceModel{
+			AggregateNumPorts:          types.Int32Value(int32(override.AggregateNumPorts)),
+			AutoNegotiate:              types.BoolValue(override.Autoneg),
+			Dot1XCtrl:                  types.StringValue(override.Dot1XCtrl),
+			Dot1XIDleTimeout:           types.Int32Value(int32(override.Dot1XIDleTimeout)),
+			EgressRateLimitKbps:        types.Int32Value(int32(override.EgressRateLimitKbps)),
+			EgressRateLimitKbpsEnabled: types.BoolValue(override.EgressRateLimitKbpsEnabled),
+			ExcludedNetworkIDs:         excludedNetworkIDs,
+			Forward:                    types.StringValue(override.Forward),
+			FullDuplex:                 types.BoolValue(override.FullDuplex),
+			Isolation:                  types.BoolValue(override.Isolation),
+			LLPMEDEnabled:              types.BoolValue(override.LldpmedEnabled),
+			LLPMEDNotifyEnabled:        types.BoolValue(override.LldpmedNotifyEnabled),
+			MirrorPortIDX:              types.Int32Value(int32(override.MirrorPortIDX)),
+			Name:                       types.StringValue(override.Name),
+			NativeNetworkID:            types.StringValue(override.NATiveNetworkID),
+			Operation:                  types.StringValue(override.OpMode),
+			POEMode:                    types.StringValue(override.PoeMode),
+			PortProfileID:              types.StringValue(override.PortProfileID),
+			PortSecurityEnabled:        types.BoolValue(override.PortSecurityEnabled),
+			PortSecurityMACAddresses:   portSecurityMACAddresses,
+			PriorityQueue1Level:        types.Int32Value(int32(override.PriorityQueue1Level)),
+			PriorityQueue2Level:        types.Int32Value(int32(override.PriorityQueue2Level)),
+			PriorityQueue3Level:        types.Int32Value(int32(override.PriorityQueue3Level)),
+			PriorityQueue4Level:        types.Int32Value(int32(override.PriorityQueue4Level)),
+			// QOSProfile: DeviceSwitchPortOverrideQOSProfileDataSourceModel{
+			// 	// QOSPolicies:    ,
+			// 	QOSProfileMode: types.StringValue(override.qos),
+			// },
+			SettingPreference:            types.StringValue(override.SettingPreference),
+			Speed:                        types.Int32Value(int32(override.Speed)),
+			StormControlBroadcastEnabled: types.BoolValue(override.StormctrlBroadcastastEnabled),
+			StormControlBroadcastLevel:   types.Int32Value(int32(override.StormctrlBroadcastastLevel)),
+			StormControlBroadcastRate:    types.Int32Value(int32(override.StormctrlBroadcastastRate)),
+			StormControlMulticastEnabled: types.BoolValue(override.StormctrlMcastEnabled),
+			StormControlMulticastLevel:   types.Int32Value(int32(override.StormctrlUcastLevel)),
+			StormControlMulticastRate:    types.Int32Value(int32(override.StormctrlUcastRate)),
+			StormControlType:             types.StringValue(override.StormctrlType),
+			StormControlUnicastEnabled:   types.BoolValue(override.StormctrlUcastEnabled),
+			StormControlUnicastLevel:     types.Int32Value(int32(override.StormctrlUcastLevel)),
+			StormControlUnicastRate:      types.Int32Value(int32(override.StormctrlUcastRate)),
+			STPPortMode:                  types.BoolValue(override.StpPortMode),
+			VoiceNetworkID:               types.StringValue(override.VoiceNetworkID),
+
+			// TODO: (jtoyer) Update the client to include these fields
+			// FECMode: types.StringValue(override.Fec) ,
+			// PortKeepaliveEnabled: types.BoolValue(override.portk),
+			// TaggedVLANMgmt: types.StringValue(override.tag) ,
+		}
+	}
 
 	tflog.Trace(ctx, "device read", map[string]interface{}{"mac": data.Mac.ValueString()})
 
