@@ -7,7 +7,7 @@ import (
 	"context"
 	"github.com/hashicorp/terraform-plugin-framework/providerserver"
 	"github.com/hashicorp/terraform-plugin-go/tfprotov6"
-	"github.com/paultyng/go-unifi/unifi"
+	"github.com/jamestoyer/go-unifi/unifi"
 	"github.com/testcontainers/testcontainers-go"
 	"github.com/testcontainers/testcontainers-go/wait"
 	"log"
