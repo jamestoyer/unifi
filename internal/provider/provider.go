@@ -193,7 +193,7 @@ func (p *UnifiProvider) Configure(ctx context.Context, req provider.ConfigureReq
 
 func (p *UnifiProvider) Resources(ctx context.Context) []func() resource.Resource {
 	return []func() resource.Resource{
-		NewExampleResource,
+		NewDeviceSwitchResource,
 	}
 }
 

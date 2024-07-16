@@ -151,9 +151,6 @@ func (d *DeviceSwitchDataSource) Schema(ctx context.Context, req datasource.Sche
 			"mac": schema.StringAttribute{
 				MarkdownDescription: "The MAC address of the device",
 				Required:            true,
-				Validators:          []validator.String{
-					// TODO: (jtoyer) Add a mac address validator
-				},
 			},
 			"site": schema.StringAttribute{
 				MarkdownDescription: "The site the switch belongs to. Setting this overrides the default site set in " +
