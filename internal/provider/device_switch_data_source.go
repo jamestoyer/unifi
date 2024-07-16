@@ -6,6 +6,7 @@ package provider
 import (
 	"context"
 	"fmt"
+	"github.com/hashicorp/terraform-plugin-framework-nettypes/iptypes"
 	"github.com/hashicorp/terraform-plugin-framework-validators/stringvalidator"
 	"github.com/hashicorp/terraform-plugin-framework/datasource"
 	"github.com/hashicorp/terraform-plugin-framework/datasource/schema"
@@ -29,21 +30,22 @@ type DeviceSwitchDataSource struct {
 
 // DeviceSwitchDataSourceModel describes the data source data model.
 type DeviceSwitchDataSourceModel struct {
+	// TODO: (jtoyer) Add IP to the unifi client and expose it here
 	Mac  types.String `tfsdk:"mac"`
 	Site types.String `tfsdk:"site"`
 
 	// Read Only
-	ID      types.String `tfsdk:"id"`
-	Adopted types.Bool   `tfsdk:"adopted"`
-	// ConfigNetwork          DeviceSwitchConfigNetworkDataSourceModel `tfsdk:"config_network"`
-	Disabled               types.Bool   `tfsdk:"disabled"`
-	Dot1XFallbackNetworkID types.String `tfsdk:"dot1x_fallback_networkconf_id"`
-	Dot1XPortctrlEnabled   types.Bool   `tfsdk:"dot1x_portctrl_enabled"`
-	FlowctrlEnabled        types.Bool   `tfsdk:"flowctrl_enabled"`
-	JumboframeEnabled      types.Bool   `tfsdk:"jumboframe_enabled"`
-	MgmtNetworkID          types.String `tfsdk:"mgmt_network_id"`
-	Model                  types.String `tfsdk:"model"`
-	Name                   types.String `tfsdk:"name"`
+	ID                     types.String                              `tfsdk:"id"`
+	Adopted                types.Bool                                `tfsdk:"adopted"`
+	ConfigNetwork          *DeviceSwitchConfigNetworkDataSourceModel `tfsdk:"config_network"`
+	Disabled               types.Bool                                `tfsdk:"disabled"`
+	Dot1XFallbackNetworkID types.String                              `tfsdk:"dot1x_fallback_networkconf_id"`
+	Dot1XPortctrlEnabled   types.Bool                                `tfsdk:"dot1x_portctrl_enabled"`
+	FlowctrlEnabled        types.Bool                                `tfsdk:"flowctrl_enabled"`
+	JumboframeEnabled      types.Bool                                `tfsdk:"jumboframe_enabled"`
+	MgmtNetworkID          types.String                              `tfsdk:"mgmt_network_id"`
+	Model                  types.String                              `tfsdk:"model"`
+	Name                   types.String                              `tfsdk:"name"`
 	// PortOverrides map[string]DeviceSwitchPortOverrideDataSourceModel `tfsdk:"port_overrides"`
 	SnmpContact  types.String `tfsdk:"snmp_contact"`
 	SnmpLocation types.String `tfsdk:"snmp_location"`
@@ -56,14 +58,14 @@ type DeviceSwitchDataSourceModel struct {
 }
 
 type DeviceSwitchConfigNetworkDataSourceModel struct {
-	BondingEnabled bool   `json:"bonding_enabled,omitempty"`
-	DNS1           string `json:"dns1,omitempty"` // ^(([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])$|^(([0-9a-fA-F]{1,4}:){7,7}[0-9a-fA-F]{1,4}|([0-9a-fA-F]{1,4}:){1,7}:|([0-9a-fA-F]{1,4}:){1,6}:[0-9a-fA-F]{1,4}|([0-9a-fA-F]{1,4}:){1,5}(:[0-9a-fA-F]{1,4}){1,2}|([0-9a-fA-F]{1,4}:){1,4}(:[0-9a-fA-F]{1,4}){1,3}|([0-9a-fA-F]{1,4}:){1,3}(:[0-9a-fA-F]{1,4}){1,4}|([0-9a-fA-F]{1,4}:){1,2}(:[0-9a-fA-F]{1,4}){1,5}|[0-9a-fA-F]{1,4}:((:[0-9a-fA-F]{1,4}){1,6})|:((:[0-9a-fA-F]{1,4}){1,7}|:)|fe80:(:[0-9a-fA-F]{0,4}){0,4}%[0-9a-zA-Z]{1,}|::(ffff(:0{1,4}){0,1}:){0,1}((25[0-5]|(2[0-4]|1{0,1}[0-9]){0,1}[0-9])\.){3,3}(25[0-5]|(2[0-4]|1{0,1}[0-9]){0,1}[0-9])|([0-9a-fA-F]{1,4}:){1,4}:((25[0-5]|(2[0-4]|1{0,1}[0-9]){0,1}[0-9])\.){3,3}(25[0-5]|(2[0-4]|1{0,1}[0-9]){0,1}[0-9]))$|^$
-	DNS2           string `json:"dns2,omitempty"` // ^(([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])$|^(([0-9a-fA-F]{1,4}:){7,7}[0-9a-fA-F]{1,4}|([0-9a-fA-F]{1,4}:){1,7}:|([0-9a-fA-F]{1,4}:){1,6}:[0-9a-fA-F]{1,4}|([0-9a-fA-F]{1,4}:){1,5}(:[0-9a-fA-F]{1,4}){1,2}|([0-9a-fA-F]{1,4}:){1,4}(:[0-9a-fA-F]{1,4}){1,3}|([0-9a-fA-F]{1,4}:){1,3}(:[0-9a-fA-F]{1,4}){1,4}|([0-9a-fA-F]{1,4}:){1,2}(:[0-9a-fA-F]{1,4}){1,5}|[0-9a-fA-F]{1,4}:((:[0-9a-fA-F]{1,4}){1,6})|:((:[0-9a-fA-F]{1,4}){1,7}|:)|fe80:(:[0-9a-fA-F]{0,4}){0,4}%[0-9a-zA-Z]{1,}|::(ffff(:0{1,4}){0,1}:){0,1}((25[0-5]|(2[0-4]|1{0,1}[0-9]){0,1}[0-9])\.){3,3}(25[0-5]|(2[0-4]|1{0,1}[0-9]){0,1}[0-9])|([0-9a-fA-F]{1,4}:){1,4}:((25[0-5]|(2[0-4]|1{0,1}[0-9]){0,1}[0-9])\.){3,3}(25[0-5]|(2[0-4]|1{0,1}[0-9]){0,1}[0-9]))$|^$
-	DNSsuffix      string `json:"dnssuffix,omitempty"`
-	Gateway        string `json:"gateway,omitempty"` // ^(([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])$|^$
-	IP             string `json:"ip,omitempty"`      // ^(([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])$
-	Netmask        string `json:"netmask,omitempty"` // ^((128|192|224|240|248|252|254)\.0\.0\.0)|(255\.(((0|128|192|224|240|248|252|254)\.0\.0)|(255\.(((0|128|192|224|240|248|252|254)\.0)|255\.(0|128|192|224|240|248|252|254)))))$
-	Type           string `json:"type,omitempty"`    // dhcp|static
+	AlternativeDNS iptypes.IPv4Address `tfsdk:"alternative_dns"`
+	BondingEnabled types.Bool          `tfsdk:"bonding_enabled"`
+	DNSSuffix      types.String        `tfsdk:"dns_suffix"`
+	Gateway        iptypes.IPv4Address `tfsdk:"gateway"`
+	IP             iptypes.IPv4Address `tfsdk:"ip"`
+	Netmask        iptypes.IPv4Address `tfsdk:"netmask"`
+	PreferredDNS   iptypes.IPv4Address `tfsdk:"preferred_dns"`
+	Type           types.String        `tfsdk:"type"`
 }
 
 //
@@ -180,26 +182,66 @@ func (d *DeviceSwitchDataSource) Schema(ctx context.Context, req datasource.Sche
 			"adopted": schema.BoolAttribute{
 				Computed: true,
 			},
+			"config_network": schema.SingleNestedAttribute{
+				Optional: true,
+				Attributes: map[string]schema.Attribute{
+					"alternative_dns": schema.StringAttribute{
+						Optional:   true,
+						CustomType: iptypes.IPv4AddressType{},
+					},
+					"bonding_enabled": schema.BoolAttribute{
+						Optional: true,
+					},
+					"dns_suffix": schema.StringAttribute{
+						Optional: true,
+					},
+					"gateway": schema.StringAttribute{
+						Optional:   true,
+						CustomType: iptypes.IPv4AddressType{},
+					},
+					"ip": schema.StringAttribute{
+						Optional:   true,
+						CustomType: iptypes.IPv4AddressType{},
+					},
+					"netmask": schema.StringAttribute{
+						Optional:   true,
+						CustomType: iptypes.IPv4AddressType{},
+						Validators: []validator.String{
+							stringvalidator.RegexMatches(regexp.MustCompile("^((128|192|224|240|248|252|254)\\.0\\.0\\.0)|(255\\.(((0|128|192|224|240|248|252|254)\\.0\\.0)|(255\\.(((0|128|192|224|240|248|252|254)\\.0)|255\\.(0|128|192|224|240|248|252|254)))))$"), "invalid net mask"),
+						},
+					},
+					"preferred_dns": schema.StringAttribute{
+						Optional:   true,
+						CustomType: iptypes.IPv4AddressType{},
+					},
+					"type": schema.StringAttribute{
+						Optional: true,
+						Validators: []validator.String{
+							stringvalidator.OneOf("dhcp", "static"),
+						},
+					},
+				},
+			},
 			"disabled": schema.BoolAttribute{
-				Computed: true,
+				Optional: true,
 			},
 			"dot1x_fallback_networkconf_id": schema.StringAttribute{
-				Computed: true,
+				Optional: true,
 				Validators: []validator.String{
 					stringvalidator.RegexMatches(regexp.MustCompile("^([\\d\\w]+|)$"), "must only contain letters and numbers or must be empty"),
 				},
 			},
 			"dot1x_portctrl_enabled": schema.BoolAttribute{
-				Computed: true,
+				Optional: true,
 			},
 			"flowctrl_enabled": schema.BoolAttribute{
-				Computed: true,
+				Optional: true,
 			},
 			"jumboframe_enabled": schema.BoolAttribute{
-				Computed: true,
+				Optional: true,
 			},
 			"mgmt_network_id": schema.StringAttribute{
-				Computed: true,
+				Optional: true,
 				Validators: []validator.String{
 					stringvalidator.RegexMatches(regexp.MustCompile("^([\\d\\w]+)$"), "must only contain letters and numbers"),
 				},
@@ -208,7 +250,7 @@ func (d *DeviceSwitchDataSource) Schema(ctx context.Context, req datasource.Sche
 				Computed: true,
 			},
 			"name": schema.StringAttribute{
-				Computed: true,
+				Optional: true,
 				Validators: []validator.String{
 					stringvalidator.LengthBetween(0, 128),
 				},
@@ -253,13 +295,13 @@ func (d *DeviceSwitchDataSource) Schema(ctx context.Context, req datasource.Sche
 			// 	},
 			// },
 			"snmp_contact": schema.StringAttribute{
-				Computed: true,
+				Optional: true,
 				Validators: []validator.String{
 					stringvalidator.LengthBetween(0, 255),
 				},
 			},
 			"snmp_location": schema.StringAttribute{
-				Computed: true,
+				Optional: true,
 				Validators: []validator.String{
 					stringvalidator.LengthBetween(0, 255),
 				},
@@ -268,13 +310,13 @@ func (d *DeviceSwitchDataSource) Schema(ctx context.Context, req datasource.Sche
 				Computed: true,
 			},
 			"stp_priority": schema.StringAttribute{
-				Computed: true,
+				Optional: true,
 				Validators: []validator.String{
 					stringvalidator.OneOf("0", "4096", "8192", "12288", "16384", "20480", "24576", "28672", "32768", "36864", "40960", "45056", "49152", "53248", "57344", "61440"),
 				},
 			},
 			"stp_version": schema.StringAttribute{
-				Computed: true,
+				Optional: true,
 				Validators: []validator.String{
 					stringvalidator.OneOf("stp", "rstp", "disabled"),
 					stringvalidator.RegexMatches(regexp.MustCompile("^([\\d\\w]+|)$"), "must only contain letters and numbers or must be empty"),
@@ -348,6 +390,30 @@ func (d *DeviceSwitchDataSource) Read(ctx context.Context, req datasource.ReadRe
 	data.StpPriority = types.StringValue(device.StpPriority)
 	data.StpVersion = types.StringValue(device.StpVersion)
 	data.Type = types.StringValue(device.Type)
+
+	data.ConfigNetwork = &DeviceSwitchConfigNetworkDataSourceModel{
+		BondingEnabled: types.BoolValue(device.ConfigNetwork.BondingEnabled),
+		Type:           types.StringValue(device.ConfigNetwork.Type),
+	}
+
+	if device.ConfigNetwork.DNS1 != "" {
+		data.ConfigNetwork.PreferredDNS = iptypes.NewIPv4AddressValue(device.ConfigNetwork.DNS1)
+	}
+	if device.ConfigNetwork.DNS2 != "" {
+		data.ConfigNetwork.AlternativeDNS = iptypes.NewIPv4AddressValue(device.ConfigNetwork.DNS2)
+	}
+	if device.ConfigNetwork.DNSsuffix != "" {
+		data.ConfigNetwork.DNSSuffix = types.StringValue(device.ConfigNetwork.DNSsuffix)
+	}
+	if device.ConfigNetwork.Gateway != "" {
+		data.ConfigNetwork.Gateway = iptypes.NewIPv4AddressValue(device.ConfigNetwork.Gateway)
+	}
+	if device.ConfigNetwork.IP != "" {
+		data.ConfigNetwork.IP = iptypes.NewIPv4AddressValue(device.ConfigNetwork.IP)
+	}
+	if device.ConfigNetwork.Netmask != "" {
+		data.ConfigNetwork.Netmask = iptypes.NewIPv4AddressValue(device.ConfigNetwork.Netmask)
+	}
 
 	// data.PortOverrides = make(map[string]DeviceSwitchPortOverrideDataSourceModel, len(device.PortOverrides))
 	// for _, override := range device.PortOverrides {
