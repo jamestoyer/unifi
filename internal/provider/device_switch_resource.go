@@ -33,8 +33,9 @@ type DeviceSwitchResource struct {
 // DeviceSwitchResourceModel describes the resource data model.
 type DeviceSwitchResourceModel struct {
 	// Computed Values
-	ID    types.String `tfsdk:"id"`
-	Model types.String `tfsdk:"model"`
+	ID     types.String `tfsdk:"id"`
+	Model  types.String `tfsdk:"model"`
+	SiteID types.String `tfsdk:"site_id"`
 
 	// Configurable Values
 	Disabled            types.Bool   `tfsdk:"disabled"`
@@ -65,6 +66,13 @@ func (r *DeviceSwitchResource) Schema(ctx context.Context, req resource.SchemaRe
 			},
 			"model": schema.StringAttribute{
 				Computed: true,
+				PlanModifiers: []planmodifier.String{
+					stringplanmodifier.UseStateForUnknown(),
+				},
+			},
+			"site_id": schema.StringAttribute{
+				MarkdownDescription: "The Unifi internal ID of the site.",
+				Computed:            true,
 				PlanModifiers: []planmodifier.String{
 					stringplanmodifier.UseStateForUnknown(),
 				},
@@ -464,6 +472,7 @@ func (r *DeviceSwitchResource) Read(ctx context.Context, req resource.ReadReques
 
 	// Computed values
 	data.Model = types.StringValue(device.Model)
+	data.SiteID = types.StringValue(device.SiteID)
 
 	// Configurable Values
 	data.Disabled = types.BoolValue(device.Disabled)
