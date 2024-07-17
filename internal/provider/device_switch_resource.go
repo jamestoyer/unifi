@@ -4,18 +4,24 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/hashicorp/terraform-plugin-framework-nettypes/iptypes"
+	"github.com/hashicorp/terraform-plugin-framework-validators/helpers/validatordiag"
 	"github.com/hashicorp/terraform-plugin-framework-validators/stringvalidator"
+	"github.com/hashicorp/terraform-plugin-framework/attr"
 	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/booldefault"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema/objectdefault"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringdefault"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/schema/validator"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/hashicorp/terraform-plugin-log/tflog"
 	"github.com/jamestoyer/go-unifi/unifi"
 	"github.com/jamestoyer/terraform-provider-unifi/internal/provider/utils"
+	"regexp"
 )
 
 var (
@@ -23,7 +29,11 @@ var (
 	_ resource.Resource                = &DeviceSwitchResource{}
 	_ resource.ResourceWithImportState = &DeviceSwitchResource{}
 
-	defaultDeviceSwitchResourceModel = DeviceSwitchResourceModel{}
+	defaultDeviceSwitchResourceModel              = DeviceSwitchResourceModel{}
+	defaultDeviceSwitchConfigNetworkResourceModel = DeviceSwitchConfigNetworkResourceModel{
+		BondingEnabled: types.BoolValue(false),
+		Type:           types.StringValue("dhcp"),
+	}
 )
 
 func NewDeviceSwitchResource() resource.Resource {
@@ -186,16 +196,17 @@ type DeviceSwitchResourceModel struct {
 	SiteID types.String `tfsdk:"site_id"`
 
 	// Configurable Values
-	Disabled            types.Bool   `tfsdk:"disabled"`
-	Mac                 types.String `tfsdk:"mac"`
-	ManagementNetworkID types.String `tfsdk:"management_network_id"`
-	Name                types.String `tfsdk:"name"`
-	Site                types.String `tfsdk:"site"`
-	SnmpContact         types.String `tfsdk:"snmp_contact"`
-	SnmpLocation        types.String `tfsdk:"snmp_location"`
+	Disabled            types.Bool                              `tfsdk:"disabled"`
+	IPSettings          *DeviceSwitchConfigNetworkResourceModel `tfsdk:"ip_settings"`
+	Mac                 types.String                            `tfsdk:"mac"`
+	ManagementNetworkID types.String                            `tfsdk:"management_network_id"`
+	Name                types.String                            `tfsdk:"name"`
+	Site                types.String                            `tfsdk:"site"`
+	SnmpContact         types.String                            `tfsdk:"snmp_contact"`
+	SnmpLocation        types.String                            `tfsdk:"snmp_location"`
 }
 
-func (d *DeviceSwitchResourceModel) schema(ctx context.Context, req resource.SchemaRequest, resp *resource.SchemaResponse) schema.Schema {
+func (m *DeviceSwitchResourceModel) schema(ctx context.Context, req resource.SchemaRequest, resp *resource.SchemaResponse) schema.Schema {
 	return schema.Schema{
 		MarkdownDescription: "A Unifi switch device.",
 
@@ -223,36 +234,6 @@ func (d *DeviceSwitchResourceModel) schema(ctx context.Context, req resource.Sch
 			},
 
 			// Configurable values
-
-			// "config_network": schema.SingleNestedAttribute{
-			// 	Computed: true,
-			// 	Attributes: map[string]schema.Attribute{
-			// 		"alternative_dns": schema.StringAttribute{
-			// 			Computed: true,
-			// 		},
-			// 		"bonding_enabled": schema.BoolAttribute{
-			// 			Computed: true,
-			// 		},
-			// 		"dns_suffix": schema.StringAttribute{
-			// 			Computed: true,
-			// 		},
-			// 		"gateway": schema.StringAttribute{
-			// 			Computed: true,
-			// 		},
-			// 		"ip": schema.StringAttribute{
-			// 			Computed: true,
-			// 		},
-			// 		"netmask": schema.StringAttribute{
-			// 			Computed: true,
-			// 		},
-			// 		"preferred_dns": schema.StringAttribute{
-			// 			Computed: true,
-			// 		},
-			// 		"type": schema.StringAttribute{
-			// 			Computed: true,
-			// 		},
-			// 	},
-			// },
 			"disabled": schema.BoolAttribute{
 				Optional: true,
 				Computed: true,
@@ -267,6 +248,7 @@ func (d *DeviceSwitchResourceModel) schema(ctx context.Context, req resource.Sch
 			// "flowctrl_enabled": schema.BoolAttribute{
 			// 	Computed: true,
 			// },
+			"ip_settings": defaultDeviceSwitchConfigNetworkResourceModel.schema(ctx, req, resp),
 			// "jumboframe_enabled": schema.BoolAttribute{
 			// 	Computed: true,
 			// },
@@ -522,6 +504,7 @@ func (d *DeviceSwitchResourceModel) schema(ctx context.Context, req resource.Sch
 					stringvalidator.LengthAtMost(255),
 				},
 			},
+			// TODO: (jtoyer) To enable these we need to set an exclusion on unifi.SettingGlobalSwitch
 			// "stp_priority": schema.StringAttribute{
 			// 	Computed: true,
 			// },
@@ -543,15 +526,16 @@ func (d *DeviceSwitchResourceModel) schema(ctx context.Context, req resource.Sch
 	}
 }
 
-func (d *DeviceSwitchResourceModel) toUnifiDevice() *unifi.Device {
+func (m *DeviceSwitchResourceModel) toUnifiDevice() *unifi.Device {
 	return &unifi.Device{
-		Disabled:      d.Disabled.ValueBool(),
-		MgmtNetworkID: d.ManagementNetworkID.ValueString(),
-		Name:          d.Name.ValueString(),
+		ConfigNetwork: m.IPSettings.toUnifiStruct(),
+		Disabled:      m.Disabled.ValueBool(),
+		MgmtNetworkID: m.ManagementNetworkID.ValueString(),
+		Name:          m.Name.ValueString(),
 		// TODO: (jtoyer) Populate with real values once we're there
 		PortOverrides: []unifi.DevicePortOverrides{},
-		SnmpContact:   d.SnmpContact.ValueString(),
-		SnmpLocation:  d.SnmpLocation.ValueString(),
+		SnmpContact:   m.SnmpContact.ValueString(),
+		SnmpLocation:  m.SnmpLocation.ValueString(),
 	}
 }
 
@@ -563,6 +547,7 @@ func newDeviceSwitchResourceModel(device *unifi.Device, site string, model Devic
 
 	// Configurable Values
 	model.Disabled = types.BoolValue(device.Disabled)
+	model.IPSettings = newDeviceSwitchConfigNetworkResourceModel(device.ConfigNetwork, model.IPSettings)
 	model.Mac = types.StringValue(device.MAC)
 	model.ManagementNetworkID = utils.StringValue(device.MgmtNetworkID)
 	model.Name = types.StringValue(device.Name)
@@ -570,4 +555,251 @@ func newDeviceSwitchResourceModel(device *unifi.Device, site string, model Devic
 	model.SnmpLocation = utils.StringValue(device.SnmpLocation)
 
 	return model
+}
+
+type DeviceSwitchConfigNetworkResourceModel struct {
+	AlternativeDNS iptypes.IPv4Address `tfsdk:"alternative_dns"`
+	BondingEnabled types.Bool          `tfsdk:"bonding_enabled"`
+	DNSSuffix      types.String        `tfsdk:"dns_suffix"`
+	Gateway        iptypes.IPv4Address `tfsdk:"gateway"`
+	IP             iptypes.IPv4Address `tfsdk:"ip"`
+	Netmask        iptypes.IPv4Address `tfsdk:"netmask"`
+	PreferredDNS   iptypes.IPv4Address `tfsdk:"preferred_dns"`
+	Type           types.String        `tfsdk:"type"`
+}
+
+func (m *DeviceSwitchConfigNetworkResourceModel) attributeTypes() map[string]attr.Type {
+	return map[string]attr.Type{
+		"alternative_dns": iptypes.IPv4AddressType{},
+		"bonding_enabled": types.BoolType,
+		"dns_suffix":      types.StringType,
+		"gateway":         iptypes.IPv4AddressType{},
+		"ip":              iptypes.IPv4AddressType{},
+		"netmask":         iptypes.IPv4AddressType{},
+		"preferred_dns":   iptypes.IPv4AddressType{},
+		"type":            types.StringType,
+	}
+}
+
+func (m *DeviceSwitchConfigNetworkResourceModel) schema(ctx context.Context, req resource.SchemaRequest, resp *resource.SchemaResponse) schema.Attribute {
+	defaultValues, diags := types.ObjectValueFrom(ctx,
+		defaultDeviceSwitchConfigNetworkResourceModel.attributeTypes(),
+		defaultDeviceSwitchConfigNetworkResourceModel,
+	)
+
+	resp.Diagnostics.Append(diags...)
+
+	return schema.SingleNestedAttribute{
+		Computed: true,
+		Optional: true,
+		Attributes: map[string]schema.Attribute{
+			"alternative_dns": schema.StringAttribute{
+				Optional:   true,
+				CustomType: iptypes.IPv4AddressType{},
+				Validators: []validator.String{
+					// Can only be set when a preferred_dns is set
+					stringvalidator.AlsoRequires(path.MatchRelative().AtParent().AtName("preferred_dns")),
+				},
+			},
+			"bonding_enabled": schema.BoolAttribute{
+				Computed: true,
+				Optional: true,
+				Default:  booldefault.StaticBool(false),
+			},
+			"dns_suffix": schema.StringAttribute{
+				Optional: true,
+				Validators: []validator.String{
+					// Can only be set when the IP is set
+					stringvalidator.AlsoRequires(path.MatchRelative().AtParent().AtName("ip")),
+				},
+			},
+			"gateway": schema.StringAttribute{
+				Optional:   true,
+				CustomType: iptypes.IPv4AddressType{},
+			},
+			"ip": schema.StringAttribute{
+				Optional:   true,
+				CustomType: iptypes.IPv4AddressType{},
+			},
+			"netmask": schema.StringAttribute{
+				Optional:   true,
+				CustomType: iptypes.IPv4AddressType{},
+				Validators: []validator.String{
+					stringvalidator.RegexMatches(regexp.MustCompile("^((128|192|224|240|248|252|254)\\.0\\.0\\.0)|(255\\.(((0|128|192|224|240|248|252|254)\\.0\\.0)|(255\\.(((0|128|192|224|240|248|252|254)\\.0)|255\\.(0|128|192|224|240|248|252|254)))))$"), "invalid net mask"),
+				},
+			},
+			"preferred_dns": schema.StringAttribute{
+				Optional:   true,
+				CustomType: iptypes.IPv4AddressType{},
+			},
+			"type": schema.StringAttribute{
+				Computed: true,
+				Optional: true,
+				Default:  stringdefault.StaticString("dhcp"),
+				Validators: []validator.String{
+					stringvalidator.OneOf("dhcp", "static"),
+					OneOfWithPaths("static",
+						path.MatchRelative().AtParent().AtName("ip"),
+						path.MatchRelative().AtParent().AtName("gateway"),
+						path.MatchRelative().AtParent().AtName("netmask"),
+						path.MatchRelative().AtParent().AtName("preferred_dns"),
+					),
+				},
+			},
+		},
+		Default: objectdefault.StaticValue(defaultValues),
+		Validators: []validator.Object{
+			DeviceSwitchConfigNetworkResourceValidator{},
+		},
+	}
+}
+
+func (m *DeviceSwitchConfigNetworkResourceModel) toUnifiStruct() unifi.DeviceConfigNetwork {
+	return unifi.DeviceConfigNetwork{
+		DNS2:           m.AlternativeDNS.ValueString(),
+		BondingEnabled: m.BondingEnabled.ValueBool(),
+		// TODO: (jtoyer) fix DNS Suffic field name in the unifi client
+		DNSsuffix: m.DNSSuffix.ValueString(),
+		Gateway:   m.Gateway.ValueString(),
+		IP:        m.IP.ValueString(),
+		Netmask:   m.Netmask.ValueString(),
+		DNS1:      m.PreferredDNS.ValueString(),
+		Type:      m.Type.ValueString(),
+	}
+}
+
+func newDeviceSwitchConfigNetworkResourceModel(network unifi.DeviceConfigNetwork, model *DeviceSwitchConfigNetworkResourceModel) *DeviceSwitchConfigNetworkResourceModel {
+	if model == nil {
+		model = &DeviceSwitchConfigNetworkResourceModel{Type: types.StringValue("dhcp")}
+	}
+
+	model.AlternativeDNS = utils.IPv4AddressValue(network.DNS2)
+	model.BondingEnabled = types.BoolValue(network.BondingEnabled)
+	model.DNSSuffix = utils.StringValue(network.DNSsuffix)
+	model.Gateway = utils.IPv4AddressValue(network.Gateway)
+	model.IP = utils.IPv4AddressValue(network.IP)
+	model.Netmask = utils.IPv4AddressValue(network.Netmask)
+	model.PreferredDNS = utils.IPv4AddressValue(network.DNS1)
+	model.Type = utils.StringValue(network.Type)
+
+	return model
+}
+
+type DeviceSwitchConfigNetworkResourceValidator struct {
+}
+
+func (v DeviceSwitchConfigNetworkResourceValidator) Description(ctx context.Context) string {
+	return "When type is dhcp no other attributes must be set"
+}
+
+func (v DeviceSwitchConfigNetworkResourceValidator) MarkdownDescription(ctx context.Context) string {
+	return "When type is `dhcp` no other attributes must be set"
+}
+
+func (v DeviceSwitchConfigNetworkResourceValidator) ValidateObject(ctx context.Context, req validator.ObjectRequest, resp *validator.ObjectResponse) {
+
+	// a, ok := req.ConfigValue.Attributes()["type"]
+	// staticAddress := false
+	//
+	// // if ok && a == "static"
+	//
+	// if staticAddress {
+	// 	f:= stringvalidator.AlsoRequires(
+	// 		path.MatchRoot("ip"),
+	// 	)
+	// 	f.ValidateString(ctx, req.)
+	// }
+	//
+	// if !ok {
+	// 	return
+	// }
+	//
+	// if a.IsNull() {
+	// 	return
+	// }
+
+	return
+}
+
+// valueWithOtherPathsValidator validates that when the given String value matches that the given paths are set.
+type valueWithOtherPathsValidator struct {
+	paths path.Expressions
+	value types.String
+}
+
+func (v valueWithOtherPathsValidator) Description(ctx context.Context) string {
+	return v.MarkdownDescription(ctx)
+}
+
+func (v valueWithOtherPathsValidator) MarkdownDescription(_ context.Context) string {
+	return fmt.Sprintf("value must be: %s", v.value)
+}
+
+func (v valueWithOtherPathsValidator) ValidateString(ctx context.Context, req validator.StringRequest, resp *validator.StringResponse) {
+	if req.ConfigValue.IsNull() || req.ConfigValue.IsUnknown() {
+		return
+	}
+
+	value := req.ConfigValue
+	if !value.Equal(v.value) {
+		return
+	}
+
+	// resp.Diagnostics.Append(validatordiag.InvalidAttributeValueMatchDiagnostic(
+	// 	req.Path,
+	// 	v.Description(ctx),
+	// 	value.String(),
+	// ))
+
+	expressions := req.PathExpression.MergeExpressions(v.paths...)
+
+	for _, expression := range expressions {
+		matchedPaths, diags := req.Config.PathMatches(ctx, expression)
+
+		resp.Diagnostics.Append(diags...)
+
+		// Collect all errors
+		if diags.HasError() {
+			continue
+		}
+
+		for _, mp := range matchedPaths {
+			// If the user specifies the same attribute this validator is applied to,
+			// also as part of the input, skip it
+			if mp.Equal(req.Path) {
+				continue
+			}
+
+			var mpVal attr.Value
+			diags := req.Config.GetAttribute(ctx, mp, &mpVal)
+			resp.Diagnostics.Append(diags...)
+
+			// Collect all errors
+			if diags.HasError() {
+				continue
+			}
+
+			// Delay validation until all involved attribute have a known value
+			if mpVal.IsUnknown() {
+				return
+			}
+
+			if mpVal.IsNull() {
+				resp.Diagnostics.Append(validatordiag.InvalidAttributeCombinationDiagnostic(
+					req.Path,
+					fmt.Sprintf("Attribute %q must be specified when %q is %s", mp, req.Path, v.value),
+				))
+			}
+		}
+	}
+
+}
+
+// OneOfWithPaths checks that the String held in the attribute is the given `value` and all attributes set in `paths`
+// set.
+func OneOfWithPaths(value string, paths ...path.Expression) validator.String {
+	return valueWithOtherPathsValidator{
+		paths: paths,
+		value: types.StringValue(value),
+	}
 }
