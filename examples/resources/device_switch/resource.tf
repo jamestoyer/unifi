@@ -14,7 +14,7 @@ provider "unifi" {
 }
 
 data "unifi_device_switch" "example" {
-  mac = "00:27:22:00:00:07"
+  mac = "00:27:22:00:00:01"
 }
 
 import {
@@ -25,7 +25,7 @@ import {
 resource "unifi_device_switch" "example" {
   name = "Example Switch"
   mac = data.unifi_device_switch.example.mac
-  snmp_contact = "a"
+#   snmp_contact = "a"
 }
 
 output "unifi_device_switch" {

@@ -2,16 +2,19 @@ package provider
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"github.com/hashicorp/terraform-plugin-framework-validators/stringvalidator"
 	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema/booldefault"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/schema/validator"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/hashicorp/terraform-plugin-log/tflog"
+	"github.com/jamestoyer/go-unifi/unifi"
 )
 
 // Ensure provider defined types fully satisfy framework interfaces.
@@ -34,6 +37,7 @@ type DeviceSwitchResourceModel struct {
 	Model types.String `tfsdk:"model"`
 
 	// Configurable Values
+	Disabled            types.Bool   `tfsdk:"disabled"`
 	Mac                 types.String `tfsdk:"mac"`
 	ManagementNetworkID types.String `tfsdk:"management_network_id"`
 	Name                types.String `tfsdk:"name"`
@@ -97,9 +101,11 @@ func (r *DeviceSwitchResource) Schema(ctx context.Context, req resource.SchemaRe
 			// 		},
 			// 	},
 			// },
-			// "disabled": schema.BoolAttribute{
-			// 	Optional: true,
-			// },
+			"disabled": schema.BoolAttribute{
+				Optional: true,
+				Computed: true,
+				Default:  booldefault.StaticBool(false),
+			},
 			// "dot1x_fallback_networkconf_id": schema.StringAttribute{
 			// 	Computed: true,
 			// },
@@ -460,11 +466,18 @@ func (r *DeviceSwitchResource) Read(ctx context.Context, req resource.ReadReques
 	data.Model = types.StringValue(device.Model)
 
 	// Configurable Values
+	data.Disabled = types.BoolValue(device.Disabled)
 	data.Mac = types.StringValue(device.MAC)
-	data.ManagementNetworkID = types.StringValue(device.MgmtNetworkID)
+	if device.MgmtNetworkID != "" {
+		data.ManagementNetworkID = types.StringValue(device.MgmtNetworkID)
+	}
 	data.Name = types.StringValue(device.Name)
-	data.SnmpContact = types.StringValue(device.SnmpContact)
-	data.SnmpLocation = types.StringValue(device.SnmpLocation)
+	if device.SnmpContact != "" {
+		data.SnmpContact = types.StringValue(device.SnmpContact)
+	}
+	if device.SnmpLocation != "" {
+		data.SnmpLocation = types.StringValue(device.SnmpLocation)
+	}
 
 	data.Site = types.StringValue(site)
 
@@ -482,13 +495,57 @@ func (r *DeviceSwitchResource) Update(ctx context.Context, req resource.UpdateRe
 		return
 	}
 
-	// If applicable, this is a great opportunity to initialize any necessary
-	// provider client data and make a call using it.
-	// httpResp, err := r.client.Do(httpReq)
-	// if err != nil {
-	//     resp.Diagnostics.AddError("Client Error", fmt.Sprintf("Unable to update example, got error: %s", err))
-	//     return
-	// }
+	site := r.client.site
+	if data.Site.ValueString() != "" {
+		site = data.Site.ValueString()
+	}
+
+	device := &unifi.Device{
+		ID: data.ID.ValueString(),
+
+		Disabled:      data.Disabled.ValueBool(),
+		MgmtNetworkID: data.ManagementNetworkID.ValueString(),
+		Name:          data.Name.ValueString(),
+		// TODO: (jtoyer) Populate with real values once we're there
+		PortOverrides: []unifi.DevicePortOverrides{},
+		SnmpContact:   data.SnmpContact.ValueString(),
+		SnmpLocation:  data.SnmpLocation.ValueString(),
+	}
+
+	device, err := r.client.UpdateDevice(ctx, site, device)
+	if err != nil {
+		// When there are no changes in v8 the API doesn't return the device details. This causes the client to assume
+		// the device doesn't exist. To work around this for now do a read to get the status.
+		// TODO: (jtoyer) Update the client to handle no changes on update, i.e. a 200 but no body
+		if !errors.Is(err, &unifi.NotFoundError{}) {
+			resp.Diagnostics.AddError("Client Error", fmt.Sprintf("Unable to update switch, got error: %s", err))
+			return
+		}
+
+		device, err = r.client.GetDevice(ctx, site, data.ID.ValueString())
+		if err != nil {
+			resp.Diagnostics.AddError("Client Error", fmt.Sprintf("Unable to read updated switch, got error: %s", err))
+			return
+		}
+	}
+
+	// TODO: (jtoyer) Wait until device has finished updating after before setting these values
+	// Computed values
+	data.Model = types.StringValue(device.Model)
+	//
+	// Configurable Values
+	data.Disabled = types.BoolValue(device.Disabled)
+	data.Mac = types.StringValue(device.MAC)
+	if device.MgmtNetworkID != "" {
+		data.ManagementNetworkID = types.StringValue(device.MgmtNetworkID)
+	}
+	data.Name = types.StringValue(device.Name)
+	if device.SnmpContact != "" {
+		data.SnmpContact = types.StringValue(device.SnmpContact)
+	}
+	if device.SnmpLocation != "" {
+		data.SnmpLocation = types.StringValue(device.SnmpLocation)
+	}
 
 	// Save updated data into Terraform state
 	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)

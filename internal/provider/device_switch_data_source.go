@@ -497,6 +497,8 @@ func (d *DeviceSwitchDataSource) Read(ctx context.Context, req datasource.ReadRe
 		return
 	}
 
+	tflog.Info(ctx, "Site ID", map[string]interface{}{"site ID": device.SiteID})
+
 	data.ID = types.StringValue(device.ID)
 	data.Adopted = types.BoolValue(device.Adopted)
 	data.Disabled = types.BoolValue(device.Disabled)

@@ -14,7 +14,7 @@ provider "unifi" {
 }
 
 data "unifi_device_switch" "example" {
-  mac = "00:27:22:00:00:07"
+  mac = "00:27:22:00:00:01"
 }
 
 output "unifi_device_switch" {
