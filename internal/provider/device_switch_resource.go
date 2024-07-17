@@ -18,9 +18,13 @@ import (
 	"github.com/jamestoyer/terraform-provider-unifi/internal/provider/utils"
 )
 
-// Ensure provider defined types fully satisfy framework interfaces.
-var _ resource.Resource = &DeviceSwitchResource{}
-var _ resource.ResourceWithImportState = &DeviceSwitchResource{}
+var (
+	// Ensure provider defined types fully satisfy framework interfaces.
+	_ resource.Resource                = &DeviceSwitchResource{}
+	_ resource.ResourceWithImportState = &DeviceSwitchResource{}
+
+	defaultDeviceSwitchResourceModel = DeviceSwitchResourceModel{}
+)
 
 func NewDeviceSwitchResource() resource.Resource {
 	return &DeviceSwitchResource{}
@@ -36,7 +40,163 @@ func (r *DeviceSwitchResource) Metadata(ctx context.Context, req resource.Metada
 }
 
 func (r *DeviceSwitchResource) Schema(ctx context.Context, req resource.SchemaRequest, resp *resource.SchemaResponse) {
-	resp.Schema = schema.Schema{
+	resp.Schema = defaultDeviceSwitchResourceModel.schema(ctx, req, resp)
+}
+
+func (r *DeviceSwitchResource) Configure(ctx context.Context, req resource.ConfigureRequest, resp *resource.ConfigureResponse) {
+	// Prevent panic if the provider has not been configured.
+	if req.ProviderData == nil {
+		return
+	}
+
+	client, ok := req.ProviderData.(*unifiClient)
+
+	if !ok {
+		resp.Diagnostics.AddError(
+			"Unexpected Resource Configure Type",
+			fmt.Sprintf("Expected *unifiClient, got: %T. Please report this issue to the provider developers.", req.ProviderData),
+		)
+
+		return
+	}
+
+	r.client = client
+}
+
+func (r *DeviceSwitchResource) Create(ctx context.Context, req resource.CreateRequest, resp *resource.CreateResponse) {
+	var data DeviceSwitchResourceModel
+
+	// Read Terraform plan data into the model
+	resp.Diagnostics.Append(req.Plan.Get(ctx, &data)...)
+
+	if resp.Diagnostics.HasError() {
+		return
+	}
+
+	// If applicable, this is a great opportunity to initialize any necessary
+	// provider client data and make a call using it.
+	// httpResp, err := r.client.Do(httpReq)
+	// if err != nil {
+	//     resp.Diagnostics.AddError("Client Error", fmt.Sprintf("Unable to create example, got error: %s", err))
+	//     return
+	// }
+
+	// For the purposes of this example code, hardcoding a response value to
+	// save into the Terraform state.
+	data.ID = types.StringValue("example-id")
+
+	// Write logs using the tflog package
+	// Documentation: https://terraform.io/plugin/log
+	tflog.Trace(ctx, "created a resource")
+
+	// Save data into Terraform state
+	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
+}
+
+func (r *DeviceSwitchResource) Read(ctx context.Context, req resource.ReadRequest, resp *resource.ReadResponse) {
+	var data DeviceSwitchResourceModel
+
+	// Read Terraform prior state data into the model
+	resp.Diagnostics.Append(req.State.Get(ctx, &data)...)
+
+	if resp.Diagnostics.HasError() {
+		return
+	}
+
+	site := r.client.site
+	if data.Site.ValueString() != "" {
+		site = data.Site.ValueString()
+	}
+
+	device, err := r.client.GetDevice(ctx, site, data.ID.ValueString())
+	if err != nil {
+		resp.Diagnostics.AddError("Client Error", fmt.Sprintf("Unable to read switch, got error: %s", err))
+		return
+	}
+
+	data = newDeviceSwitchResourceModel(device, site, data)
+
+	// Save updated data into Terraform state
+	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
+}
+
+func (r *DeviceSwitchResource) Update(ctx context.Context, req resource.UpdateRequest, resp *resource.UpdateResponse) {
+	var data DeviceSwitchResourceModel
+
+	// Read Terraform plan data into the model
+	resp.Diagnostics.Append(req.Plan.Get(ctx, &data)...)
+
+	if resp.Diagnostics.HasError() {
+		return
+	}
+
+	site := r.client.site
+	if data.Site.ValueString() != "" {
+		site = data.Site.ValueString()
+	}
+
+	device := data.toUnifiDevice()
+	device.ID = data.ID.ValueString()
+
+	if _, err := r.client.UpdateDevice(ctx, site, device); err != nil {
+		// When there are no changes in v8 the API doesn't return the device details. This causes the client to assume
+		// the device doesn't exist. To work around this for now do a read to get the status.
+		// TODO: (jtoyer) Update the client to handle no changes on update, i.e. a 200 but no body
+		if !errors.Is(err, &unifi.NotFoundError{}) {
+			resp.Diagnostics.AddError("Client Error", fmt.Sprintf("Unable to update switch, got error: %s", err))
+			return
+		}
+	}
+
+	// TODO: (jtoyer) Wait until device has finished updating after before saving the state
+
+	// Save updated request data into Terraform state. Do not update with actual values as this will cause inconsistent
+	// state errors
+	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
+}
+
+func (r *DeviceSwitchResource) Delete(ctx context.Context, req resource.DeleteRequest, resp *resource.DeleteResponse) {
+	var data DeviceSwitchResourceModel
+
+	// Read Terraform prior state data into the model
+	resp.Diagnostics.Append(req.State.Get(ctx, &data)...)
+
+	if resp.Diagnostics.HasError() {
+		return
+	}
+
+	// If applicable, this is a great opportunity to initialize any necessary
+	// provider client data and make a call using it.
+	// httpResp, err := r.client.Do(httpReq)
+	// if err != nil {
+	//     resp.Diagnostics.AddError("Client Error", fmt.Sprintf("Unable to delete example, got error: %s", err))
+	//     return
+	// }
+}
+
+func (r *DeviceSwitchResource) ImportState(ctx context.Context, req resource.ImportStateRequest, resp *resource.ImportStateResponse) {
+	resource.ImportStatePassthroughID(ctx, path.Root("id"), req, resp)
+}
+
+// DeviceSwitchResourceModel describes the resource data model.
+type DeviceSwitchResourceModel struct {
+	// Computed Values
+	ID     types.String `tfsdk:"id"`
+	Model  types.String `tfsdk:"model"`
+	SiteID types.String `tfsdk:"site_id"`
+
+	// Configurable Values
+	Disabled            types.Bool   `tfsdk:"disabled"`
+	Mac                 types.String `tfsdk:"mac"`
+	ManagementNetworkID types.String `tfsdk:"management_network_id"`
+	Name                types.String `tfsdk:"name"`
+	Site                types.String `tfsdk:"site"`
+	SnmpContact         types.String `tfsdk:"snmp_contact"`
+	SnmpLocation        types.String `tfsdk:"snmp_location"`
+}
+
+func (d *DeviceSwitchResourceModel) schema(ctx context.Context, req resource.SchemaRequest, resp *resource.SchemaResponse) schema.Schema {
+	return schema.Schema{
 		MarkdownDescription: "A Unifi switch device.",
 
 		Attributes: map[string]schema.Attribute{
@@ -381,158 +541,6 @@ func (r *DeviceSwitchResource) Schema(ctx context.Context, req resource.SchemaRe
 			// },
 		},
 	}
-}
-
-func (r *DeviceSwitchResource) Configure(ctx context.Context, req resource.ConfigureRequest, resp *resource.ConfigureResponse) {
-	// Prevent panic if the provider has not been configured.
-	if req.ProviderData == nil {
-		return
-	}
-
-	client, ok := req.ProviderData.(*unifiClient)
-
-	if !ok {
-		resp.Diagnostics.AddError(
-			"Unexpected Resource Configure Type",
-			fmt.Sprintf("Expected *unifiClient, got: %T. Please report this issue to the provider developers.", req.ProviderData),
-		)
-
-		return
-	}
-
-	r.client = client
-}
-
-func (r *DeviceSwitchResource) Create(ctx context.Context, req resource.CreateRequest, resp *resource.CreateResponse) {
-	var data DeviceSwitchResourceModel
-
-	// Read Terraform plan data into the model
-	resp.Diagnostics.Append(req.Plan.Get(ctx, &data)...)
-
-	if resp.Diagnostics.HasError() {
-		return
-	}
-
-	// If applicable, this is a great opportunity to initialize any necessary
-	// provider client data and make a call using it.
-	// httpResp, err := r.client.Do(httpReq)
-	// if err != nil {
-	//     resp.Diagnostics.AddError("Client Error", fmt.Sprintf("Unable to create example, got error: %s", err))
-	//     return
-	// }
-
-	// For the purposes of this example code, hardcoding a response value to
-	// save into the Terraform state.
-	data.ID = types.StringValue("example-id")
-
-	// Write logs using the tflog package
-	// Documentation: https://terraform.io/plugin/log
-	tflog.Trace(ctx, "created a resource")
-
-	// Save data into Terraform state
-	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
-}
-
-func (r *DeviceSwitchResource) Read(ctx context.Context, req resource.ReadRequest, resp *resource.ReadResponse) {
-	var data DeviceSwitchResourceModel
-
-	// Read Terraform prior state data into the model
-	resp.Diagnostics.Append(req.State.Get(ctx, &data)...)
-
-	if resp.Diagnostics.HasError() {
-		return
-	}
-
-	site := r.client.site
-	if data.Site.ValueString() != "" {
-		site = data.Site.ValueString()
-	}
-
-	device, err := r.client.GetDevice(ctx, site, data.ID.ValueString())
-	if err != nil {
-		resp.Diagnostics.AddError("Client Error", fmt.Sprintf("Unable to read switch, got error: %s", err))
-		return
-	}
-
-	data = newDeviceSwitchResourceModel(device, site, data)
-
-	// Save updated data into Terraform state
-	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
-}
-
-func (r *DeviceSwitchResource) Update(ctx context.Context, req resource.UpdateRequest, resp *resource.UpdateResponse) {
-	var data DeviceSwitchResourceModel
-
-	// Read Terraform plan data into the model
-	resp.Diagnostics.Append(req.Plan.Get(ctx, &data)...)
-
-	if resp.Diagnostics.HasError() {
-		return
-	}
-
-	site := r.client.site
-	if data.Site.ValueString() != "" {
-		site = data.Site.ValueString()
-	}
-
-	device := data.toUnifiDevice()
-	device.ID = data.ID.ValueString()
-
-	if _, err := r.client.UpdateDevice(ctx, site, device); err != nil {
-		// When there are no changes in v8 the API doesn't return the device details. This causes the client to assume
-		// the device doesn't exist. To work around this for now do a read to get the status.
-		// TODO: (jtoyer) Update the client to handle no changes on update, i.e. a 200 but no body
-		if !errors.Is(err, &unifi.NotFoundError{}) {
-			resp.Diagnostics.AddError("Client Error", fmt.Sprintf("Unable to update switch, got error: %s", err))
-			return
-		}
-	}
-
-	// TODO: (jtoyer) Wait until device has finished updating after before saving the state
-
-	// Save updated request data into Terraform state. Do not update with actual values as this will cause inconsistent
-	// state errors
-	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
-}
-
-func (r *DeviceSwitchResource) Delete(ctx context.Context, req resource.DeleteRequest, resp *resource.DeleteResponse) {
-	var data DeviceSwitchResourceModel
-
-	// Read Terraform prior state data into the model
-	resp.Diagnostics.Append(req.State.Get(ctx, &data)...)
-
-	if resp.Diagnostics.HasError() {
-		return
-	}
-
-	// If applicable, this is a great opportunity to initialize any necessary
-	// provider client data and make a call using it.
-	// httpResp, err := r.client.Do(httpReq)
-	// if err != nil {
-	//     resp.Diagnostics.AddError("Client Error", fmt.Sprintf("Unable to delete example, got error: %s", err))
-	//     return
-	// }
-}
-
-func (r *DeviceSwitchResource) ImportState(ctx context.Context, req resource.ImportStateRequest, resp *resource.ImportStateResponse) {
-	resource.ImportStatePassthroughID(ctx, path.Root("id"), req, resp)
-}
-
-// DeviceSwitchResourceModel describes the resource data model.
-type DeviceSwitchResourceModel struct {
-	// Computed Values
-	ID     types.String `tfsdk:"id"`
-	Model  types.String `tfsdk:"model"`
-	SiteID types.String `tfsdk:"site_id"`
-
-	// Configurable Values
-	Disabled            types.Bool   `tfsdk:"disabled"`
-	Mac                 types.String `tfsdk:"mac"`
-	ManagementNetworkID types.String `tfsdk:"management_network_id"`
-	Name                types.String `tfsdk:"name"`
-	Site                types.String `tfsdk:"site"`
-	SnmpContact         types.String `tfsdk:"snmp_contact"`
-	SnmpLocation        types.String `tfsdk:"snmp_location"`
 }
 
 func (d *DeviceSwitchResourceModel) toUnifiDevice() *unifi.Device {
