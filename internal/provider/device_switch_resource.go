@@ -15,6 +15,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/hashicorp/terraform-plugin-log/tflog"
 	"github.com/jamestoyer/go-unifi/unifi"
+	"github.com/jamestoyer/terraform-provider-unifi/internal/provider/utils"
 )
 
 // Ensure provider defined types fully satisfy framework interfaces.
@@ -28,23 +29,6 @@ func NewDeviceSwitchResource() resource.Resource {
 // DeviceSwitchResource defines the resource implementation.
 type DeviceSwitchResource struct {
 	client *unifiClient
-}
-
-// DeviceSwitchResourceModel describes the resource data model.
-type DeviceSwitchResourceModel struct {
-	// Computed Values
-	ID     types.String `tfsdk:"id"`
-	Model  types.String `tfsdk:"model"`
-	SiteID types.String `tfsdk:"site_id"`
-
-	// Configurable Values
-	Disabled            types.Bool   `tfsdk:"disabled"`
-	Mac                 types.String `tfsdk:"mac"`
-	ManagementNetworkID types.String `tfsdk:"management_network_id"`
-	Name                types.String `tfsdk:"name"`
-	Site                types.String `tfsdk:"site"`
-	SnmpContact         types.String `tfsdk:"snmp_contact"`
-	SnmpLocation        types.String `tfsdk:"snmp_location"`
 }
 
 func (r *DeviceSwitchResource) Metadata(ctx context.Context, req resource.MetadataRequest, resp *resource.MetadataResponse) {
@@ -470,25 +454,7 @@ func (r *DeviceSwitchResource) Read(ctx context.Context, req resource.ReadReques
 		return
 	}
 
-	// Computed values
-	data.Model = types.StringValue(device.Model)
-	data.SiteID = types.StringValue(device.SiteID)
-
-	// Configurable Values
-	data.Disabled = types.BoolValue(device.Disabled)
-	data.Mac = types.StringValue(device.MAC)
-	if device.MgmtNetworkID != "" {
-		data.ManagementNetworkID = types.StringValue(device.MgmtNetworkID)
-	}
-	data.Name = types.StringValue(device.Name)
-	if device.SnmpContact != "" {
-		data.SnmpContact = types.StringValue(device.SnmpContact)
-	}
-	if device.SnmpLocation != "" {
-		data.SnmpLocation = types.StringValue(device.SnmpLocation)
-	}
-
-	data.Site = types.StringValue(site)
+	data = newDeviceSwitchResourceModel(device, site, data)
 
 	// Save updated data into Terraform state
 	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
@@ -509,20 +475,10 @@ func (r *DeviceSwitchResource) Update(ctx context.Context, req resource.UpdateRe
 		site = data.Site.ValueString()
 	}
 
-	device := &unifi.Device{
-		ID: data.ID.ValueString(),
+	device := data.toUnifiDevice()
+	device.ID = data.ID.ValueString()
 
-		Disabled:      data.Disabled.ValueBool(),
-		MgmtNetworkID: data.ManagementNetworkID.ValueString(),
-		Name:          data.Name.ValueString(),
-		// TODO: (jtoyer) Populate with real values once we're there
-		PortOverrides: []unifi.DevicePortOverrides{},
-		SnmpContact:   data.SnmpContact.ValueString(),
-		SnmpLocation:  data.SnmpLocation.ValueString(),
-	}
-
-	device, err := r.client.UpdateDevice(ctx, site, device)
-	if err != nil {
+	if _, err := r.client.UpdateDevice(ctx, site, device); err != nil {
 		// When there are no changes in v8 the API doesn't return the device details. This causes the client to assume
 		// the device doesn't exist. To work around this for now do a read to get the status.
 		// TODO: (jtoyer) Update the client to handle no changes on update, i.e. a 200 but no body
@@ -530,33 +486,12 @@ func (r *DeviceSwitchResource) Update(ctx context.Context, req resource.UpdateRe
 			resp.Diagnostics.AddError("Client Error", fmt.Sprintf("Unable to update switch, got error: %s", err))
 			return
 		}
-
-		device, err = r.client.GetDevice(ctx, site, data.ID.ValueString())
-		if err != nil {
-			resp.Diagnostics.AddError("Client Error", fmt.Sprintf("Unable to read updated switch, got error: %s", err))
-			return
-		}
 	}
 
-	// TODO: (jtoyer) Wait until device has finished updating after before setting these values
-	// Computed values
-	data.Model = types.StringValue(device.Model)
-	//
-	// Configurable Values
-	data.Disabled = types.BoolValue(device.Disabled)
-	data.Mac = types.StringValue(device.MAC)
-	if device.MgmtNetworkID != "" {
-		data.ManagementNetworkID = types.StringValue(device.MgmtNetworkID)
-	}
-	data.Name = types.StringValue(device.Name)
-	if device.SnmpContact != "" {
-		data.SnmpContact = types.StringValue(device.SnmpContact)
-	}
-	if device.SnmpLocation != "" {
-		data.SnmpLocation = types.StringValue(device.SnmpLocation)
-	}
+	// TODO: (jtoyer) Wait until device has finished updating after before saving the state
 
-	// Save updated data into Terraform state
+	// Save updated request data into Terraform state. Do not update with actual values as this will cause inconsistent
+	// state errors
 	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
 }
 
@@ -581,4 +516,50 @@ func (r *DeviceSwitchResource) Delete(ctx context.Context, req resource.DeleteRe
 
 func (r *DeviceSwitchResource) ImportState(ctx context.Context, req resource.ImportStateRequest, resp *resource.ImportStateResponse) {
 	resource.ImportStatePassthroughID(ctx, path.Root("id"), req, resp)
+}
+
+// DeviceSwitchResourceModel describes the resource data model.
+type DeviceSwitchResourceModel struct {
+	// Computed Values
+	ID     types.String `tfsdk:"id"`
+	Model  types.String `tfsdk:"model"`
+	SiteID types.String `tfsdk:"site_id"`
+
+	// Configurable Values
+	Disabled            types.Bool   `tfsdk:"disabled"`
+	Mac                 types.String `tfsdk:"mac"`
+	ManagementNetworkID types.String `tfsdk:"management_network_id"`
+	Name                types.String `tfsdk:"name"`
+	Site                types.String `tfsdk:"site"`
+	SnmpContact         types.String `tfsdk:"snmp_contact"`
+	SnmpLocation        types.String `tfsdk:"snmp_location"`
+}
+
+func (d *DeviceSwitchResourceModel) toUnifiDevice() *unifi.Device {
+	return &unifi.Device{
+		Disabled:      d.Disabled.ValueBool(),
+		MgmtNetworkID: d.ManagementNetworkID.ValueString(),
+		Name:          d.Name.ValueString(),
+		// TODO: (jtoyer) Populate with real values once we're there
+		PortOverrides: []unifi.DevicePortOverrides{},
+		SnmpContact:   d.SnmpContact.ValueString(),
+		SnmpLocation:  d.SnmpLocation.ValueString(),
+	}
+}
+
+func newDeviceSwitchResourceModel(device *unifi.Device, site string, model DeviceSwitchResourceModel) DeviceSwitchResourceModel {
+	// Computed values
+	model.Model = types.StringValue(device.Model)
+	model.Site = types.StringValue(site)
+	model.SiteID = types.StringValue(device.SiteID)
+
+	// Configurable Values
+	model.Disabled = types.BoolValue(device.Disabled)
+	model.Mac = types.StringValue(device.MAC)
+	model.ManagementNetworkID = utils.StringValue(device.MgmtNetworkID)
+	model.Name = types.StringValue(device.Name)
+	model.SnmpContact = utils.StringValue(device.SnmpContact)
+	model.SnmpLocation = utils.StringValue(device.SnmpLocation)
+
+	return model
 }

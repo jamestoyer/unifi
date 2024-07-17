@@ -24,8 +24,10 @@ import {
 
 resource "unifi_device_switch" "example" {
   name = "Example Switch"
-  mac = data.unifi_device_switch.example.mac
-#   snmp_contact = "a"
+  mac  = data.unifi_device_switch.example.mac
+
+  #   disabled = true
+  #     snmp_contact = "a"
 }
 
 output "unifi_device_switch" {
