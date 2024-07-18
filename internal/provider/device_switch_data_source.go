@@ -563,26 +563,29 @@ func (d *DeviceSwitchDataSource) Read(ctx context.Context, req datasource.ReadRe
 			portSecurityMACAddresses = types.ListValueMust(types.StringType, attrs)
 		}
 
-		qosProfile := DeviceSwitchPortOverrideQOSProfileDataSourceModel{
-			QOSProfileMode: types.StringValue(override.QOSProfile.QOSProfileMode),
-		}
-		for _, policy := range override.QOSProfile.QOSPolicies {
-			qosProfile.QOSPolicies = append(qosProfile.QOSPolicies, DeviceSwitchPortOverrideQOSPolicyDataSourceModel{
-				QOSMarking: DeviceSwitchPortOverrideQOSMarkingDataSourceModel{
-					CosCode:          types.Int32Value(int32(policy.QOSMarking.CosCode)),
-					DscpCode:         types.Int32Value(int32(policy.QOSMarking.DscpCode)),
-					IPPrecedenceCode: types.Int32Value(int32(policy.QOSMarking.IPPrecedenceCode)),
-					Queue:            types.Int32Value(int32(policy.QOSMarking.Queue)),
-				},
-				QOSMatching: DeviceSwitchPortOverrideQOSMatchingDataSourceModel{
-					CosCode:          types.Int32Value(int32(policy.QOSMatching.CosCode)),
-					DscpCode:         types.Int32Value(int32(policy.QOSMatching.DscpCode)),
-					DstPort:          types.Int32Value(int32(policy.QOSMatching.DstPort)),
-					IPPrecedenceCode: types.Int32Value(int32(policy.QOSMatching.IPPrecedenceCode)),
-					Protocol:         types.StringValue(policy.QOSMatching.Protocol),
-					SrcPort:          types.Int32Value(int32(policy.QOSMatching.SrcPort)),
-				},
-			})
+		var qosProfile DeviceSwitchPortOverrideQOSProfileDataSourceModel
+		if override.QOSProfile != nil {
+			qosProfile = DeviceSwitchPortOverrideQOSProfileDataSourceModel{
+				QOSProfileMode: types.StringValue(override.QOSProfile.QOSProfileMode),
+			}
+			for _, policy := range override.QOSProfile.QOSPolicies {
+				qosProfile.QOSPolicies = append(qosProfile.QOSPolicies, DeviceSwitchPortOverrideQOSPolicyDataSourceModel{
+					QOSMarking: DeviceSwitchPortOverrideQOSMarkingDataSourceModel{
+						CosCode:          types.Int32Value(int32(policy.QOSMarking.CosCode)),
+						DscpCode:         types.Int32Value(int32(policy.QOSMarking.DscpCode)),
+						IPPrecedenceCode: types.Int32Value(int32(policy.QOSMarking.IPPrecedenceCode)),
+						Queue:            types.Int32Value(int32(policy.QOSMarking.Queue)),
+					},
+					QOSMatching: DeviceSwitchPortOverrideQOSMatchingDataSourceModel{
+						CosCode:          types.Int32Value(int32(policy.QOSMatching.CosCode)),
+						DscpCode:         types.Int32Value(int32(policy.QOSMatching.DscpCode)),
+						DstPort:          types.Int32Value(int32(policy.QOSMatching.DstPort)),
+						IPPrecedenceCode: types.Int32Value(int32(policy.QOSMatching.IPPrecedenceCode)),
+						Protocol:         types.StringValue(policy.QOSMatching.Protocol),
+						SrcPort:          types.Int32Value(int32(policy.QOSMatching.SrcPort)),
+					},
+				})
+			}
 		}
 
 		data.PortOverrides[strconv.Itoa(override.PortIDX)] = DeviceSwitchPortOverrideDataSourceModel{

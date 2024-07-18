@@ -5,12 +5,16 @@ import (
 	"errors"
 	"fmt"
 	"github.com/hashicorp/terraform-plugin-framework-nettypes/iptypes"
+	"github.com/hashicorp/terraform-plugin-framework-validators/boolvalidator"
+	"github.com/hashicorp/terraform-plugin-framework-validators/int32validator"
 	"github.com/hashicorp/terraform-plugin-framework-validators/stringvalidator"
 	"github.com/hashicorp/terraform-plugin-framework/attr"
+	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/booldefault"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema/int32default"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/objectdefault"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringdefault"
@@ -22,6 +26,7 @@ import (
 	"github.com/jamestoyer/terraform-provider-unifi/internal/provider/customvalidator"
 	"github.com/jamestoyer/terraform-provider-unifi/internal/provider/utils"
 	"regexp"
+	"strconv"
 )
 
 var (
@@ -34,6 +39,7 @@ var (
 		BondingEnabled: types.BoolValue(false),
 		Type:           types.StringValue("dhcp"),
 	}
+	defaultDeviceSwitchPortOverrideModel = DeviceSwitchPortOverrideResourceModel{}
 )
 
 func NewDeviceSwitchResource() resource.Resource {
@@ -145,10 +151,16 @@ func (r *DeviceSwitchResource) Update(ctx context.Context, req resource.UpdateRe
 		site = data.Site.ValueString()
 	}
 
-	device := data.toUnifiDevice()
+	device, diags := data.toUnifiDevice()
+	if diags.HasError() {
+		resp.Diagnostics.Append(diags...)
+		return
+	}
+
 	device.ID = data.ID.ValueString()
 
-	if _, err := r.client.UpdateDevice(ctx, site, device); err != nil {
+	device, err := r.client.UpdateDevice(ctx, site, device)
+	if err != nil {
 		// When there are no changes in v8 the API doesn't return the device details. This causes the client to assume
 		// the device doesn't exist. To work around this for now do a read to get the status.
 		// TODO: (jtoyer) Update the client to handle no changes on update, i.e. a 200 but no body
@@ -160,8 +172,6 @@ func (r *DeviceSwitchResource) Update(ctx context.Context, req resource.UpdateRe
 
 	// TODO: (jtoyer) Wait until device has finished updating after before saving the state
 
-	// Save updated request data into Terraform state. Do not update with actual values as this will cause inconsistent
-	// state errors
 	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
 }
 
@@ -196,15 +206,16 @@ type DeviceSwitchResourceModel struct {
 	SiteID types.String `tfsdk:"site_id"`
 
 	// Configurable Values
-	Disabled            types.Bool                              `tfsdk:"disabled"`
-	IPSettings          *DeviceSwitchConfigNetworkResourceModel `tfsdk:"ip_settings"`
-	Mac                 types.String                            `tfsdk:"mac"`
-	ManagementNetworkID types.String                            `tfsdk:"management_network_id"`
-	Name                types.String                            `tfsdk:"name"`
-	Site                types.String                            `tfsdk:"site"`
-	SNMPContact         types.String                            `tfsdk:"snmp_contact"`
-	SNMPLocation        types.String                            `tfsdk:"snmp_location"`
-	STPPriority         types.String                            `tfsdk:"stp_priority"`
+	Disabled            types.Bool                                       `tfsdk:"disabled"`
+	IPSettings          *DeviceSwitchConfigNetworkResourceModel          `tfsdk:"ip_settings"`
+	Mac                 types.String                                     `tfsdk:"mac"`
+	ManagementNetworkID types.String                                     `tfsdk:"management_network_id"`
+	Name                types.String                                     `tfsdk:"name"`
+	PortOverrides       map[string]DeviceSwitchPortOverrideResourceModel `tfsdk:"port_overrides"`
+	Site                types.String                                     `tfsdk:"site"`
+	SNMPContact         types.String                                     `tfsdk:"snmp_contact"`
+	SNMPLocation        types.String                                     `tfsdk:"snmp_location"`
+	STPPriority         types.String                                     `tfsdk:"stp_priority"`
 }
 
 func (m *DeviceSwitchResourceModel) schema(ctx context.Context, req resource.SchemaRequest, resp *resource.SchemaResponse) schema.Schema {
@@ -279,214 +290,10 @@ func (m *DeviceSwitchResourceModel) schema(ctx context.Context, req resource.Sch
 					stringvalidator.LengthAtMost(128),
 				},
 			},
-			// "port_overrides": schema.MapNestedAttribute{
-			// 	Computed: true,
-			// 	NestedObject: schema.NestedAttributeObject{
-			// 		Attributes: map[string]schema.Attribute{
-			// 			"aggregate_num_ports": schema.Int32Attribute{
-			// 				Optional: true,
-			// 				Validators: []validator.Int32{
-			// 					int32validator.Between(1, 8),
-			// 				},
-			// 			},
-			// 			"auto_negotiate": schema.BoolAttribute{
-			// 				Computed: true,
-			// 			},
-			// 			"dot1x_ctrl": schema.StringAttribute{
-			// 				Computed: true,
-			// 			},
-			// 			"dot1x_idle_timeout": schema.Int32Attribute{
-			// 				Computed: true,
-			// 			},
-			// 			"egress_rate_limit_kbps": schema.Int32Attribute{
-			// 				MarkdownDescription: "Sets a port's maximum rate of data transfer.",
-			// 				Computed:            true,
-			// 			},
-			// 			"egress_rate_limit_kbps_enabled": schema.BoolAttribute{
-			// 				Computed: true,
-			// 			},
-			// 			"excluded_network_ids": schema.ListAttribute{
-			// 				ElementType: types.StringType,
-			// 				Optional:    true,
-			// 			},
-			// 			"fec_mode": schema.StringAttribute{
-			// 				Computed: true,
-			// 			},
-			// 			"forward": schema.StringAttribute{
-			// 				Computed: true,
-			// 			},
-			// 			"full_duplex": schema.BoolAttribute{
-			// 				Computed: true,
-			// 			},
-			// 			"isolation": schema.BoolAttribute{
-			// 				MarkdownDescription: "Allows you to prohibit traffic between isolated ports. This only " +
-			// 					"applies to ports on the same device.",
-			// 				Computed: true,
-			// 			},
-			// 			"lldp_med_enabled": schema.BoolAttribute{
-			// 				MarkdownDescription: "Extension for LLPD user alongside the voice VLAN feature to " +
-			// 					"discover the presence of a VoIP phone. Disabling LLPD-MED will also disable the " +
-			// 					"Voice VLAN.",
-			// 				Computed: true,
-			// 			},
-			// 			"lldp_med_notify_enabled": schema.BoolAttribute{
-			// 				Computed: true,
-			// 			},
-			// 			"mirror_port_idx": schema.Int32Attribute{
-			// 				Computed: true,
-			// 			},
-			// 			"name": schema.StringAttribute{
-			// 				Required: true,
-			// 				Validators: []validator.String{
-			// 					stringvalidator.LengthBetween(0, 128),
-			// 				},
-			// 			},
-			// 			"native_network_id": schema.StringAttribute{
-			// 				MarkdownDescription: "The native network used for VLAN traffic, i.e. not tagged with a " +
-			// 					"VLAN ID. Untagged traffic from devices connected to this port will be placed on to " +
-			// 					"the selected VLAN",
-			// 				Optional: true,
-			// 			},
-			// 			"operation": schema.StringAttribute{
-			// 				Required: true,
-			// 				Validators: []validator.String{
-			// 					stringvalidator.OneOf("switch", "mirror", "aggregate"),
-			// 				},
-			// 			},
-			// 			"poe_mode": schema.StringAttribute{
-			// 				Computed: true,
-			// 			},
-			// 			"port_keepalive_enabled": schema.BoolAttribute{
-			// 				Computed: true,
-			// 			},
-			// 			"port_profile_id": schema.StringAttribute{
-			// 				Computed: true,
-			// 			},
-			// 			"port_security_enabled": schema.BoolAttribute{
-			// 				Computed: true,
-			// 			},
-			// 			"port_security_mac_addresses": schema.ListAttribute{
-			// 				ElementType: types.StringType,
-			// 				Computed:    true,
-			// 			},
-			// 			"priority_queue1_level": schema.Int32Attribute{
-			// 				Computed: true,
-			// 			},
-			// 			"priority_queue2_level": schema.Int32Attribute{
-			// 				Computed: true,
-			// 			},
-			// 			"priority_queue3_level": schema.Int32Attribute{
-			// 				Computed: true,
-			// 			},
-			// 			"priority_queue4_level": schema.Int32Attribute{
-			// 				Computed: true,
-			// 			},
-			// 			"qos_profile": schema.SingleNestedAttribute{
-			// 				Computed: true,
-			// 				Attributes: map[string]schema.Attribute{
-			// 					"qos_policies": schema.SetNestedAttribute{
-			// 						Computed: true,
-			// 						NestedObject: schema.NestedAttributeObject{
-			//
-			// 							Attributes: map[string]schema.Attribute{
-			// 								"qos_marking": schema.SingleNestedAttribute{
-			// 									Computed: true,
-			// 									Attributes: map[string]schema.Attribute{
-			// 										"cos_code": schema.Int32Attribute{
-			// 											Computed: true,
-			// 										},
-			// 										"dscp_code": schema.Int32Attribute{
-			// 											Computed: true,
-			// 										},
-			// 										"ip_precedence_code": schema.Int32Attribute{
-			// 											Computed: true,
-			// 										},
-			// 										"queue": schema.Int32Attribute{
-			// 											Computed: true,
-			// 										},
-			// 									},
-			// 								},
-			// 								"qos_matching": schema.SingleNestedAttribute{
-			// 									Computed: true,
-			// 									Attributes: map[string]schema.Attribute{
-			// 										"cos_code": schema.Int32Attribute{
-			// 											Computed: true,
-			// 										},
-			// 										"dscp_code": schema.Int32Attribute{
-			// 											Computed: true,
-			// 										},
-			// 										"dst_port": schema.Int32Attribute{
-			// 											Computed: true,
-			// 										},
-			// 										"ip_precedence_code": schema.Int32Attribute{
-			// 											Computed: true,
-			// 										},
-			// 										"protocol": schema.StringAttribute{
-			// 											Computed: true,
-			// 										},
-			// 										"src_port": schema.Int32Attribute{
-			// 											Computed: true,
-			// 										},
-			// 									},
-			// 								},
-			// 							},
-			// 						},
-			// 					},
-			// 					"qos_profile_mode": schema.StringAttribute{
-			// 						Computed: true,
-			// 					},
-			// 				},
-			// 			},
-			// 			"setting_preference": schema.StringAttribute{
-			// 				Computed: true,
-			// 			},
-			// 			"speed": schema.Int32Attribute{
-			// 				Computed: true,
-			// 			},
-			// 			"storm_control_broadcast_enabled": schema.BoolAttribute{
-			// 				Computed: true,
-			// 			},
-			// 			"storm_control_broadcast_level": schema.Int32Attribute{
-			// 				Computed: true,
-			// 			},
-			// 			"storm_control_broadcast_rate": schema.Int32Attribute{
-			// 				Computed: true,
-			// 			},
-			// 			"storm_control_multicast_enabled": schema.BoolAttribute{
-			// 				Computed: true,
-			// 			},
-			// 			"storm_control_multicast_level": schema.Int32Attribute{
-			// 				Computed: true,
-			// 			},
-			// 			"storm_control_mulitcast_rate": schema.Int32Attribute{
-			// 				Computed: true,
-			// 			},
-			// 			"storm_control_type": schema.StringAttribute{
-			// 				Computed: true,
-			// 			},
-			// 			"storm_control_unicast_enabled": schema.BoolAttribute{
-			// 				Computed: true,
-			// 			},
-			// 			"storm_control_unicast_level": schema.Int32Attribute{
-			// 				Computed: true,
-			// 			},
-			// 			"storm_control_unicast_rate": schema.Int32Attribute{
-			// 				Computed: true,
-			// 			},
-			// 			"stp_port_mode": schema.BoolAttribute{
-			// 				Computed: true,
-			// 			},
-			// 			"tagged_vlan_mgmt": schema.StringAttribute{
-			// 				Computed: true,
-			// 			},
-			// 			"voice_networkconf_id": schema.StringAttribute{
-			// 				MarkdownDescription: "Uses LLPD-MED to place a VoIP phone on the specified VLAN. Devices " +
-			// 					"connected to the phone are placed in the Native VLAN.",
-			// 				Computed: true,
-			// 			},
-			// 		},
-			// 	},
-			// },
+			"port_overrides": schema.MapNestedAttribute{
+				Optional:     true,
+				NestedObject: defaultDeviceSwitchPortOverrideModel.schema(),
+			},
 			// TODO: (jtoyer) To enable these we need to set an exclusion on unifi.SettingGlobalSwitch
 			// "radius_profile_id": schema.StringAttribute{}
 			"site": schema.StringAttribute{
@@ -528,7 +335,20 @@ func (m *DeviceSwitchResourceModel) schema(ctx context.Context, req resource.Sch
 	}
 }
 
-func (m *DeviceSwitchResourceModel) toUnifiDevice() *unifi.Device {
+func (m *DeviceSwitchResourceModel) toUnifiDevice() (*unifi.Device, diag.Diagnostics) {
+	var diags diag.Diagnostics
+	portOverrides := make([]unifi.DevicePortOverrides, len(m.PortOverrides))
+	for index, override := range m.PortOverrides {
+		i, err := strconv.Atoi(index)
+		if err != nil {
+			diags.AddAttributeWarning(path.Root("port_overrides"), "Invalid Port Index",
+				fmt.Sprintf("Expected a number for the port index instead got %s: %s", index, err))
+			continue
+		}
+
+		portOverrides = append(portOverrides, override.toUnifiStruct(i))
+	}
+
 	return &unifi.Device{
 		ConfigNetwork: m.IPSettings.toUnifiStruct(),
 		Disabled:      m.Disabled.ValueBool(),
@@ -536,11 +356,11 @@ func (m *DeviceSwitchResourceModel) toUnifiDevice() *unifi.Device {
 		MgmtNetworkID: m.ManagementNetworkID.ValueString(),
 		Name:          m.Name.ValueString(),
 		// TODO: (jtoyer) Populate with real values once we're there
-		PortOverrides: []unifi.DevicePortOverrides{},
+		PortOverrides: portOverrides,
 		SnmpContact:   m.SNMPContact.ValueString(),
 		SnmpLocation:  m.SNMPLocation.ValueString(),
 		StpPriority:   m.STPPriority.ValueString(),
-	}
+	}, diags
 }
 
 func newDeviceSwitchResourceModel(device *unifi.Device, site string, model DeviceSwitchResourceModel) DeviceSwitchResourceModel {
@@ -559,6 +379,13 @@ func newDeviceSwitchResourceModel(device *unifi.Device, site string, model Devic
 	model.SNMPLocation = utils.StringValue(device.SnmpLocation)
 	model.STPPriority = types.StringValue(device.StpPriority)
 
+	overrides := make(map[string]DeviceSwitchPortOverrideResourceModel, len(device.PortOverrides))
+	for _, override := range device.PortOverrides {
+		index := strconv.Itoa(override.PortIDX)
+		overrides[index] = newDeviceSwitchPortOverrideResourceModel(override)
+	}
+
+	model.PortOverrides = overrides
 	return model
 }
 
@@ -695,4 +522,326 @@ func newDeviceSwitchConfigNetworkResourceModel(network unifi.DeviceConfigNetwork
 	model.Type = utils.StringValue(network.Type)
 
 	return model
+}
+
+type DeviceSwitchPortOverrideResourceModel struct {
+	// Computed Values
+	AdvancedSettingsMode types.String `tfsdk:"advanced_settings_mode"`
+
+	// Configurable Values
+	FullDuplex types.Bool   `tfsdk:"full_duplex"`
+	LinkSpeed  types.Int32  `tfsdk:"link_speed"`
+	Operation  types.String `tfsdk:"operation"`
+	POEMode    types.String `tfsdk:"poe_mode"`
+}
+
+func (m *DeviceSwitchPortOverrideResourceModel) schema() schema.NestedAttributeObject {
+	return schema.NestedAttributeObject{
+		Attributes: map[string]schema.Attribute{
+			"advanced_settings_mode": schema.StringAttribute{
+				Computed: true,
+				// Default:  stringdefault.StaticString("auto"),
+				PlanModifiers: []planmodifier.String{
+					CalculatePortOverrideAdvancedSettingsValue(),
+				},
+				Validators: []validator.String{
+					stringvalidator.OneOf("auto", "manual"),
+				},
+			},
+			// "aggregate_num_ports": schema.Int32Attribute{
+			// 	Optional: true,
+			// 	Validators: []validator.Int32{
+			// 		int32validator.Between(1, 8),
+			// 	},
+			// },
+			// "autoneg": schema.BoolAttribute{
+			// 	// Computed: true,
+			// 	Optional: true,
+			// },
+			// "dot1x_ctrl": schema.StringAttribute{
+			// 	Computed: true,
+			// },
+			// "dot1x_idle_timeout": schema.Int32Attribute{
+			// 	Computed: true,
+			// },
+			// "egress_rate_limit_kbps": schema.Int32Attribute{
+			// 	MarkdownDescription: "Sets a port's maximum rate of data transfer.",
+			// 	Computed:            true,
+			// },
+			// "egress_rate_limit_kbps_enabled": schema.BoolAttribute{
+			// 	Computed: true,
+			// },
+			// "excluded_network_ids": schema.ListAttribute{
+			// 	ElementType: types.StringType,
+			// 	Optional:    true,
+			// },
+			// "fec_mode": schema.StringAttribute{
+			// 	Computed: true,
+			// },
+			// "forward": schema.StringAttribute{
+			// 	Computed: true,
+			// },
+			"full_duplex": schema.BoolAttribute{
+				Computed: true,
+				Optional: true,
+				Default:  booldefault.StaticBool(false),
+				Validators: []validator.Bool{
+					boolvalidator.AlsoRequires(path.MatchRelative().AtParent().AtName("link_speed")),
+				},
+			},
+			// "isolation": schema.BoolAttribute{
+			// 	MarkdownDescription: "Allows you to prohibit traffic between isolated ports. This only " +
+			// 		"applies to ports on the same device.",
+			// 	Computed: true,
+			// },
+			"link_speed": schema.Int32Attribute{
+				MarkdownDescription: "An override for the link speed of the port. Setting this to `0` indicates that" +
+					" this is auto negotiated",
+				Computed: true,
+				Optional: true,
+				Default:  int32default.StaticInt32(0),
+				Validators: []validator.Int32{
+					int32validator.OneOf(0, 10, 100, 1000, 2500, 5000, 10000, 20000, 25000, 40000, 50000, 100000),
+					int32validator.AlsoRequires(path.MatchRelative().AtParent().AtName("full_duplex")),
+				},
+			},
+			// "lldp_med_enabled": schema.BoolAttribute{
+			// 	MarkdownDescription: "Extension for LLPD user alongside the voice VLAN feature to " +
+			// 		"discover the presence of a VoIP phone. Disabling LLPD-MED will also disable the " +
+			// 		"Voice VLAN.",
+			// 	Computed: true,
+			// },
+			// "lldp_med_notify_enabled": schema.BoolAttribute{
+			// 	Computed: true,
+			// },
+			// "mirror_port_idx": schema.Int32Attribute{
+			// 	Computed: true,
+			// },
+			// "name": schema.StringAttribute{
+			// 	Required: true,
+			// 	Validators: []validator.String{
+			// 		stringvalidator.LengthBetween(0, 128),
+			// 	},
+			// },
+			// "native_network_id": schema.StringAttribute{
+			// 	MarkdownDescription: "The native network used for VLAN traffic, i.e. not tagged with a " +
+			// 		"VLAN ID. Untagged traffic from devices connected to this port will be placed on to " +
+			// 		"the selected VLAN",
+			// 	Optional: true,
+			// },
+			"operation": schema.StringAttribute{
+				Computed: true,
+				Optional: true,
+				Default:  stringdefault.StaticString("switch"),
+				Validators: []validator.String{
+					stringvalidator.OneOf("switch", "mirror", "aggregate"),
+				},
+			},
+			"poe_mode": schema.StringAttribute{
+				Computed: true,
+				Optional: true,
+				Default:  stringdefault.StaticString("auto"),
+				Validators: []validator.String{
+					stringvalidator.OneOf("auto", "pasv24", "passthrough", "off"),
+				},
+			},
+			// "port_keepalive_enabled": schema.BoolAttribute{
+			// 	Computed: true,
+			// },
+			// "port_profile_id": schema.StringAttribute{
+			// 	Computed: true,
+			// },
+			// "port_security_enabled": schema.BoolAttribute{
+			// 	Computed: true,
+			// },
+			// "port_security_mac_addresses": schema.ListAttribute{
+			// 	ElementType: types.StringType,
+			// 	Computed:    true,
+			// },
+			// "priority_queue1_level": schema.Int32Attribute{
+			// 	Computed: true,
+			// },
+			// "priority_queue2_level": schema.Int32Attribute{
+			// 	Computed: true,
+			// },
+			// "priority_queue3_level": schema.Int32Attribute{
+			// 	Computed: true,
+			// },
+			// "priority_queue4_level": schema.Int32Attribute{
+			// 	Computed: true,
+			// },
+			// "qos_profile": schema.SingleNestedAttribute{
+			// 	Computed: true,
+			// 	Attributes: map[string]schema.Attribute{
+			// 		"qos_policies": schema.SetNestedAttribute{
+			// 			Computed: true,
+			// 			NestedObject: schema.NestedAttributeObject{
+			//
+			// 				Attributes: map[string]schema.Attribute{
+			// 					"qos_marking": schema.SingleNestedAttribute{
+			// 						Computed: true,
+			// 						Attributes: map[string]schema.Attribute{
+			// 							"cos_code": schema.Int32Attribute{
+			// 								Computed: true,
+			// 							},
+			// 							"dscp_code": schema.Int32Attribute{
+			// 								Computed: true,
+			// 							},
+			// 							"ip_precedence_code": schema.Int32Attribute{
+			// 								Computed: true,
+			// 							},
+			// 							"queue": schema.Int32Attribute{
+			// 								Computed: true,
+			// 							},
+			// 						},
+			// 					},
+			// 					"qos_matching": schema.SingleNestedAttribute{
+			// 						Computed: true,
+			// 						Attributes: map[string]schema.Attribute{
+			// 							"cos_code": schema.Int32Attribute{
+			// 								Computed: true,
+			// 							},
+			// 							"dscp_code": schema.Int32Attribute{
+			// 								Computed: true,
+			// 							},
+			// 							"dst_port": schema.Int32Attribute{
+			// 								Computed: true,
+			// 							},
+			// 							"ip_precedence_code": schema.Int32Attribute{
+			// 								Computed: true,
+			// 							},
+			// 							"protocol": schema.StringAttribute{
+			// 								Computed: true,
+			// 							},
+			// 							"src_port": schema.Int32Attribute{
+			// 								Computed: true,
+			// 							},
+			// 						},
+			// 					},
+			// 				},
+			// 			},
+			// 		},
+			// 		"qos_profile_mode": schema.StringAttribute{
+			// 			Computed: true,
+			// 		},
+			// 	},
+			// },
+			// "storm_control_broadcast_enabled": schema.BoolAttribute{
+			// 	Computed: true,
+			// },
+			// "storm_control_broadcast_level": schema.Int32Attribute{
+			// 	Computed: true,
+			// },
+			// "storm_control_broadcast_rate": schema.Int32Attribute{
+			// 	Computed: true,
+			// },
+			// "storm_control_multicast_enabled": schema.BoolAttribute{
+			// 	Computed: true,
+			// },
+			// "storm_control_multicast_level": schema.Int32Attribute{
+			// 	Computed: true,
+			// },
+			// "storm_control_mulitcast_rate": schema.Int32Attribute{
+			// 	Computed: true,
+			// },
+			// "storm_control_type": schema.StringAttribute{
+			// 	Computed: true,
+			// },
+			// "storm_control_unicast_enabled": schema.BoolAttribute{
+			// 	Computed: true,
+			// },
+			// "storm_control_unicast_level": schema.Int32Attribute{
+			// 	Computed: true,
+			// },
+			// "storm_control_unicast_rate": schema.Int32Attribute{
+			// 	Computed: true,
+			// },
+			// "stp_port_mode": schema.BoolAttribute{
+			// 	Computed: true,
+			// },
+			// "tagged_vlan_mgmt": schema.StringAttribute{
+			// 	Computed: true,
+			// },
+			// "voice_networkconf_id": schema.StringAttribute{
+			// 	MarkdownDescription: "Uses LLPD-MED to place a VoIP phone on the specified VLAN. Devices " +
+			// 		"connected to the phone are placed in the Native VLAN.",
+			// 	Computed: true,
+			// },
+		},
+	}
+}
+
+func (m *DeviceSwitchPortOverrideResourceModel) toUnifiStruct(portIndex int) unifi.DevicePortOverrides {
+	return unifi.DevicePortOverrides{
+		// ComputedValues
+		SettingPreference: m.AdvancedSettingsMode.ValueString(),
+
+		// Configurable Values
+		FullDuplex: m.FullDuplex.ValueBool(),
+		OpMode:     m.Operation.ValueString(),
+		PoeMode:    m.POEMode.ValueString(),
+		PortIDX:    portIndex,
+		Speed:      int(m.LinkSpeed.ValueInt32()),
+	}
+}
+
+func newDeviceSwitchPortOverrideResourceModel(override unifi.DevicePortOverrides) DeviceSwitchPortOverrideResourceModel {
+	var advancedSettingsMode string
+	switch {
+	case override.SettingPreference != "":
+		advancedSettingsMode = override.SettingPreference
+	case override.Speed > 0:
+		advancedSettingsMode = "manual"
+	default:
+		advancedSettingsMode = "auto"
+	}
+
+	return DeviceSwitchPortOverrideResourceModel{
+		// Computed Values
+		AdvancedSettingsMode: types.StringValue(advancedSettingsMode),
+
+		// Configurable Values
+		FullDuplex: types.BoolValue(override.FullDuplex),
+		LinkSpeed:  types.Int32Value(int32(override.Speed)),
+		Operation:  types.StringValue(override.OpMode),
+		POEMode:    types.StringValue(override.PoeMode),
+	}
+}
+
+// portOverrideAdvancedSettingsValue implements the plan modifier.
+type portOverrideAdvancedSettingsValue struct{}
+
+// Description returns a human-readable description of the plan modifier.
+func (m portOverrideAdvancedSettingsValue) Description(ctx context.Context) string {
+	return "The value will be auto when no advance settings are specified and manual when any are."
+}
+
+// MarkdownDescription returns a markdown description of the plan modifier.
+func (m portOverrideAdvancedSettingsValue) MarkdownDescription(_ context.Context) string {
+	return "The value will be `auto` when no advance settings are specified and `manual` when any are."
+}
+
+// PlanModifyString implements the plan modification logic.
+func (m portOverrideAdvancedSettingsValue) PlanModifyString(ctx context.Context, req planmodifier.StringRequest, resp *planmodifier.StringResponse) {
+	// Do nothing if there is no state value.
+	if req.StateValue.IsNull() {
+		return
+	}
+
+	var linkSpeed types.Int32
+	req.Config.GetAttribute(ctx, req.Path.ParentPath().AtName("link_speed"), &linkSpeed)
+	mode := "auto"
+	switch {
+	case linkSpeed.ValueInt32() > 0:
+		mode = "manual"
+	}
+
+	resp.PlanValue = types.StringValue(mode)
+}
+
+// CalculatePortOverrideAdvancedSettingsValue returns a plan modifier that calculates the value of a port override's
+// advanced settings, based upon other fields that are set. This removes the need for the user to automatically set these.
+
+func CalculatePortOverrideAdvancedSettingsValue() planmodifier.String {
+	return portOverrideAdvancedSettingsValue{}
 }

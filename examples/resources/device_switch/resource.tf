@@ -26,6 +26,8 @@ resource "unifi_device_switch" "example" {
   name = "Example Switch"
   mac  = data.unifi_device_switch.example.mac
 
+  stp_priority = "32768"
+
   ip_settings = {
     type = "static"
 
@@ -35,8 +37,15 @@ resource "unifi_device_switch" "example" {
     preferred_dns   = "1.2.3.4"
     alternative_dns = null
   }
-}
 
-output "unifi_device_switch" {
-  value = unifi_device_switch.example
+  port_overrides = {
+    "39" = {
+      full_duplex = true
+      link_speed = "100"
+      operation = "switch"
+    }
+    "40" = {
+      poe_mode = "off"
+    }
+  }
 }
