@@ -23,6 +23,7 @@ A Unifi switch device.
 ### Optional
 
 - `disabled` (Boolean)
+- `ip_settings` (Attributes) (see [below for nested schema](#nestedatt--ip_settings))
 - `management_network_id` (String) The ID of the VLAN to use as the management VLAN instead of the default tagged network from the upstream device.
 - `site` (String) The site the switch belongs to. Setting this overrides the default site set in the provider
 - `snmp_contact` (String)
@@ -33,3 +34,17 @@ A Unifi switch device.
 - `id` (String) The Unifi switch device identifier
 - `model` (String)
 - `site_id` (String) The Unifi internal ID of the site.
+
+<a id="nestedatt--ip_settings"></a>
+### Nested Schema for `ip_settings`
+
+Optional:
+
+- `alternative_dns` (String)
+- `bonding_enabled` (Boolean)
+- `dns_suffix` (String)
+- `gateway` (String)
+- `ip` (String)
+- `netmask` (String)
+- `preferred_dns` (String)
+- `type` (String)

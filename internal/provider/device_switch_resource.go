@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"github.com/hashicorp/terraform-plugin-framework-nettypes/iptypes"
-	"github.com/hashicorp/terraform-plugin-framework-validators/helpers/validatordiag"
 	"github.com/hashicorp/terraform-plugin-framework-validators/stringvalidator"
 	"github.com/hashicorp/terraform-plugin-framework/attr"
 	"github.com/hashicorp/terraform-plugin-framework/path"
@@ -20,6 +19,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/hashicorp/terraform-plugin-log/tflog"
 	"github.com/jamestoyer/go-unifi/unifi"
+	"github.com/jamestoyer/terraform-provider-unifi/internal/provider/customvalidator"
 	"github.com/jamestoyer/terraform-provider-unifi/internal/provider/utils"
 	"regexp"
 )
@@ -511,17 +511,6 @@ func (m *DeviceSwitchResourceModel) schema(ctx context.Context, req resource.Sch
 			// "stp_version": schema.StringAttribute{
 			// 	Computed: true,
 			// },
-
-			// "configurable_attribute": schema.StringAttribute{
-			// 	MarkdownDescription: "Example configurable attribute",
-			// 	Optional:            true,
-			// },
-			// "defaulted": schema.StringAttribute{
-			// 	MarkdownDescription: "Example configurable attribute with default value",
-			// 	Optional:            true,
-			// 	Computed:            true,
-			// 	Default:             stringdefault.StaticString("example value when not configured"),
-			// },
 		},
 	}
 }
@@ -638,19 +627,26 @@ func (m *DeviceSwitchConfigNetworkResourceModel) schema(ctx context.Context, req
 				Default:  stringdefault.StaticString("dhcp"),
 				Validators: []validator.String{
 					stringvalidator.OneOf("dhcp", "static"),
-					OneOfWithPaths("static",
-						path.MatchRelative().AtParent().AtName("ip"),
+					customvalidator.StringValueWithPaths("static",
 						path.MatchRelative().AtParent().AtName("gateway"),
+						path.MatchRelative().AtParent().AtName("ip"),
+						path.MatchRelative().AtParent().AtName("netmask"),
+						path.MatchRelative().AtParent().AtName("preferred_dns"),
+					),
+					customvalidator.StringValueConflictsWithPaths("dhcp",
+						path.MatchRelative().AtParent().AtName("alternative_dns"),
+						path.MatchRelative().AtParent().AtName("bonding_enabled"),
+						path.MatchRelative().AtParent().AtName("dns_suffix"),
+						path.MatchRelative().AtParent().AtName("gateway"),
+						path.MatchRelative().AtParent().AtName("ip"),
 						path.MatchRelative().AtParent().AtName("netmask"),
 						path.MatchRelative().AtParent().AtName("preferred_dns"),
 					),
 				},
 			},
 		},
-		Default: objectdefault.StaticValue(defaultValues),
-		Validators: []validator.Object{
-			DeviceSwitchConfigNetworkResourceValidator{},
-		},
+		Default:    objectdefault.StaticValue(defaultValues),
+		Validators: []validator.Object{},
 	}
 }
 
@@ -658,7 +654,7 @@ func (m *DeviceSwitchConfigNetworkResourceModel) toUnifiStruct() unifi.DeviceCon
 	return unifi.DeviceConfigNetwork{
 		DNS2:           m.AlternativeDNS.ValueString(),
 		BondingEnabled: m.BondingEnabled.ValueBool(),
-		// TODO: (jtoyer) fix DNS Suffic field name in the unifi client
+		// TODO: (jtoyer) fix DNS Suffix field name in the unifi client
 		DNSsuffix: m.DNSSuffix.ValueString(),
 		Gateway:   m.Gateway.ValueString(),
 		IP:        m.IP.ValueString(),
@@ -683,123 +679,4 @@ func newDeviceSwitchConfigNetworkResourceModel(network unifi.DeviceConfigNetwork
 	model.Type = utils.StringValue(network.Type)
 
 	return model
-}
-
-type DeviceSwitchConfigNetworkResourceValidator struct {
-}
-
-func (v DeviceSwitchConfigNetworkResourceValidator) Description(ctx context.Context) string {
-	return "When type is dhcp no other attributes must be set"
-}
-
-func (v DeviceSwitchConfigNetworkResourceValidator) MarkdownDescription(ctx context.Context) string {
-	return "When type is `dhcp` no other attributes must be set"
-}
-
-func (v DeviceSwitchConfigNetworkResourceValidator) ValidateObject(ctx context.Context, req validator.ObjectRequest, resp *validator.ObjectResponse) {
-
-	// a, ok := req.ConfigValue.Attributes()["type"]
-	// staticAddress := false
-	//
-	// // if ok && a == "static"
-	//
-	// if staticAddress {
-	// 	f:= stringvalidator.AlsoRequires(
-	// 		path.MatchRoot("ip"),
-	// 	)
-	// 	f.ValidateString(ctx, req.)
-	// }
-	//
-	// if !ok {
-	// 	return
-	// }
-	//
-	// if a.IsNull() {
-	// 	return
-	// }
-
-	return
-}
-
-// valueWithOtherPathsValidator validates that when the given String value matches that the given paths are set.
-type valueWithOtherPathsValidator struct {
-	paths path.Expressions
-	value types.String
-}
-
-func (v valueWithOtherPathsValidator) Description(ctx context.Context) string {
-	return v.MarkdownDescription(ctx)
-}
-
-func (v valueWithOtherPathsValidator) MarkdownDescription(_ context.Context) string {
-	return fmt.Sprintf("value must be: %s", v.value)
-}
-
-func (v valueWithOtherPathsValidator) ValidateString(ctx context.Context, req validator.StringRequest, resp *validator.StringResponse) {
-	if req.ConfigValue.IsNull() || req.ConfigValue.IsUnknown() {
-		return
-	}
-
-	value := req.ConfigValue
-	if !value.Equal(v.value) {
-		return
-	}
-
-	// resp.Diagnostics.Append(validatordiag.InvalidAttributeValueMatchDiagnostic(
-	// 	req.Path,
-	// 	v.Description(ctx),
-	// 	value.String(),
-	// ))
-
-	expressions := req.PathExpression.MergeExpressions(v.paths...)
-
-	for _, expression := range expressions {
-		matchedPaths, diags := req.Config.PathMatches(ctx, expression)
-
-		resp.Diagnostics.Append(diags...)
-
-		// Collect all errors
-		if diags.HasError() {
-			continue
-		}
-
-		for _, mp := range matchedPaths {
-			// If the user specifies the same attribute this validator is applied to,
-			// also as part of the input, skip it
-			if mp.Equal(req.Path) {
-				continue
-			}
-
-			var mpVal attr.Value
-			diags := req.Config.GetAttribute(ctx, mp, &mpVal)
-			resp.Diagnostics.Append(diags...)
-
-			// Collect all errors
-			if diags.HasError() {
-				continue
-			}
-
-			// Delay validation until all involved attribute have a known value
-			if mpVal.IsUnknown() {
-				return
-			}
-
-			if mpVal.IsNull() {
-				resp.Diagnostics.Append(validatordiag.InvalidAttributeCombinationDiagnostic(
-					req.Path,
-					fmt.Sprintf("Attribute %q must be specified when %q is %s", mp, req.Path, v.value),
-				))
-			}
-		}
-	}
-
-}
-
-// OneOfWithPaths checks that the String held in the attribute is the given `value` and all attributes set in `paths`
-// set.
-func OneOfWithPaths(value string, paths ...path.Expression) validator.String {
-	return valueWithOtherPathsValidator{
-		paths: paths,
-		value: types.StringValue(value),
-	}
 }
