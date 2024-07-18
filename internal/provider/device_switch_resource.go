@@ -202,8 +202,9 @@ type DeviceSwitchResourceModel struct {
 	ManagementNetworkID types.String                            `tfsdk:"management_network_id"`
 	Name                types.String                            `tfsdk:"name"`
 	Site                types.String                            `tfsdk:"site"`
-	SnmpContact         types.String                            `tfsdk:"snmp_contact"`
-	SnmpLocation        types.String                            `tfsdk:"snmp_location"`
+	SNMPContact         types.String                            `tfsdk:"snmp_contact"`
+	SNMPLocation        types.String                            `tfsdk:"snmp_location"`
+	STPPriority         types.String                            `tfsdk:"stp_priority"`
 }
 
 func (m *DeviceSwitchResourceModel) schema(ctx context.Context, req resource.SchemaRequest, resp *resource.SchemaResponse) schema.Schema {
@@ -239,16 +240,20 @@ func (m *DeviceSwitchResourceModel) schema(ctx context.Context, req resource.Sch
 				Computed: true,
 				Default:  booldefault.StaticBool(false),
 			},
+			// TODO: (jtoyer) To enable these we need to set an exclusion on unifi.SettingGlobalSwitch
 			// "dot1x_fallback_networkconf_id": schema.StringAttribute{
 			// 	Computed: true,
 			// },
+			// TODO: (jtoyer) To enable these we need to set an exclusion on unifi.SettingGlobalSwitch
 			// "dot1x_portctrl_enabled": schema.BoolAttribute{
 			// 	Computed: true,
 			// },
+			// TODO: (jtoyer) To enable these we need to set an exclusion on unifi.SettingGlobalSwitch
 			// "flowctrl_enabled": schema.BoolAttribute{
 			// 	Computed: true,
 			// },
 			"ip_settings": defaultDeviceSwitchConfigNetworkResourceModel.schema(ctx, req, resp),
+			// TODO: (jtoyer) To enable these we need to set an exclusion on unifi.SettingGlobalSwitch
 			// "jumboframe_enabled": schema.BoolAttribute{
 			// 	Computed: true,
 			// },
@@ -482,6 +487,8 @@ func (m *DeviceSwitchResourceModel) schema(ctx context.Context, req resource.Sch
 			// 		},
 			// 	},
 			// },
+			// TODO: (jtoyer) To enable these we need to set an exclusion on unifi.SettingGlobalSwitch
+			// "radius_profile_id": schema.StringAttribute{}
 			"site": schema.StringAttribute{
 				MarkdownDescription: "The site the switch belongs to. Setting this overrides the default site set in " +
 					"the provider",
@@ -504,10 +511,16 @@ func (m *DeviceSwitchResourceModel) schema(ctx context.Context, req resource.Sch
 					stringvalidator.LengthAtMost(255),
 				},
 			},
+			"stp_priority": schema.StringAttribute{
+				Computed: true,
+				Optional: true,
+				Validators: []validator.String{
+					stringvalidator.OneOf("0", "4096", "8192", "12288", "16384", "20480", "24576", "28672",
+						"32768", "36864", "40960", "45056", "49152", "53248", "57344", "61440"),
+				},
+				Default: stringdefault.StaticString("0"),
+			},
 			// TODO: (jtoyer) To enable these we need to set an exclusion on unifi.SettingGlobalSwitch
-			// "stp_priority": schema.StringAttribute{
-			// 	Computed: true,
-			// },
 			// "stp_version": schema.StringAttribute{
 			// 	Computed: true,
 			// },
@@ -519,12 +532,14 @@ func (m *DeviceSwitchResourceModel) toUnifiDevice() *unifi.Device {
 	return &unifi.Device{
 		ConfigNetwork: m.IPSettings.toUnifiStruct(),
 		Disabled:      m.Disabled.ValueBool(),
+		MAC:           m.Mac.String(),
 		MgmtNetworkID: m.ManagementNetworkID.ValueString(),
 		Name:          m.Name.ValueString(),
 		// TODO: (jtoyer) Populate with real values once we're there
 		PortOverrides: []unifi.DevicePortOverrides{},
-		SnmpContact:   m.SnmpContact.ValueString(),
-		SnmpLocation:  m.SnmpLocation.ValueString(),
+		SnmpContact:   m.SNMPContact.ValueString(),
+		SnmpLocation:  m.SNMPLocation.ValueString(),
+		StpPriority:   m.STPPriority.ValueString(),
 	}
 }
 
@@ -540,8 +555,9 @@ func newDeviceSwitchResourceModel(device *unifi.Device, site string, model Devic
 	model.Mac = types.StringValue(device.MAC)
 	model.ManagementNetworkID = utils.StringValue(device.MgmtNetworkID)
 	model.Name = types.StringValue(device.Name)
-	model.SnmpContact = utils.StringValue(device.SnmpContact)
-	model.SnmpLocation = utils.StringValue(device.SnmpLocation)
+	model.SNMPContact = utils.StringValue(device.SnmpContact)
+	model.SNMPLocation = utils.StringValue(device.SnmpLocation)
+	model.STPPriority = types.StringValue(device.StpPriority)
 
 	return model
 }
