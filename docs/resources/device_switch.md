@@ -18,16 +18,17 @@ A Unifi switch device.
 ### Required
 
 - `mac` (String) The MAC address of the device
+- `management_network_id` (String) The ID of the VLAN to use as the management VLAN instead of the default tagged network from the upstream device.
 - `name` (String) A name to assign to the device
 
 ### Optional
 
 - `disabled` (Boolean)
-- `ip_settings` (Attributes) (see [below for nested schema](#nestedatt--ip_settings))
-- `management_network_id` (String) The ID of the VLAN to use as the management VLAN instead of the default tagged network from the upstream device.
+- `port_overrides` (Attributes Map) (see [below for nested schema](#nestedatt--port_overrides))
 - `site` (String) The site the switch belongs to. Setting this overrides the default site set in the provider
 - `snmp_contact` (String)
 - `snmp_location` (String)
+- `static_ip_settings` (Attributes) Force the switch to use a static IP address instead of one assigned by DHCP. (see [below for nested schema](#nestedatt--static_ip_settings))
 
 ### Read-Only
 
@@ -35,16 +36,33 @@ A Unifi switch device.
 - `model` (String)
 - `site_id` (String) The Unifi internal ID of the site.
 
-<a id="nestedatt--ip_settings"></a>
-### Nested Schema for `ip_settings`
+<a id="nestedatt--port_overrides"></a>
+### Nested Schema for `port_overrides`
+
+Optional:
+
+- `full_duplex` (Boolean)
+- `link_speed` (Number) An override for the link speed of the port. Setting this to `0` indicates that this is auto negotiated
+- `operation` (String)
+- `poe_mode` (String)
+
+Read-Only:
+
+- `advanced_settings_mode` (String)
+
+
+<a id="nestedatt--static_ip_settings"></a>
+### Nested Schema for `static_ip_settings`
+
+Required:
+
+- `gateway` (String)
+- `ip` (String)
+- `netmask` (String)
+- `preferred_dns` (String)
 
 Optional:
 
 - `alternative_dns` (String)
 - `bonding_enabled` (Boolean)
 - `dns_suffix` (String)
-- `gateway` (String)
-- `ip` (String)
-- `netmask` (String)
-- `preferred_dns` (String)
-- `type` (String)

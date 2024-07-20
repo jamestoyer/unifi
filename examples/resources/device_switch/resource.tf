@@ -26,26 +26,23 @@ resource "unifi_device_switch" "example" {
   name = "Example Switch"
   mac  = data.unifi_device_switch.example.mac
 
-  management_network_id = "66980c9498129b0ccf314045"
+  management_network_id = "66994c4598129b0ccf324323"
 
-#   ip_settings = {
-#     type = "static"
-#
-#     ip              = "10.2.3.4"
-#     gateway         = "10.2.0.1"
-#     netmask         = "255.255.255.0"
-#     preferred_dns   = "1.2.3.4"
-#     alternative_dns = null
-#   }
+  static_ip_settings = {
+    ip            = "10.2.3.4"
+    gateway       = "10.2.sdfds0.1"
+    netmask       = "255.255.255.0"
+    preferred_dns = "1.2.3.4"
+  }
 
-#   port_overrides = {
-#     "39" = {
-#       full_duplex = true
-#       link_speed = "100"
-#       operation = "switch"
-#     }
-#     "40" = {
-#       poe_mode = "off"
-#     }
-#   }
+  #   port_overrides = {
+  #     "39" = {
+  #       full_duplex = true
+  #       link_speed = "100"
+  #       operation = "switch"
+  #     }
+  #     "40" = {
+  #       poe_mode = "off"
+  #     }
+  #   }
 }

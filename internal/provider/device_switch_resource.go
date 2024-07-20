@@ -15,7 +15,6 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/booldefault"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/mapdefault"
-	"github.com/hashicorp/terraform-plugin-framework/resource/schema/objectdefault"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringdefault"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
@@ -23,9 +22,14 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/hashicorp/terraform-plugin-log/tflog"
 	"github.com/jamestoyer/go-unifi/unifi"
-	"github.com/jamestoyer/terraform-provider-unifi/internal/provider/customvalidator"
+	"github.com/jamestoyer/terraform-provider-unifi/internal/provider/utils"
 	"regexp"
 	"strconv"
+)
+
+const (
+	configNetworkTypeDHCP   = "dhcp"
+	configNetworkTypeStatic = "static"
 )
 
 var (
@@ -34,11 +38,8 @@ var (
 	_ resource.ResourceWithImportState = &DeviceSwitchResource{}
 
 	defaultDeviceSwitchResourceModel              = DeviceSwitchResourceModel{}
-	defaultDeviceSwitchConfigNetworkResourceModel = DeviceSwitchConfigNetworkResourceModel{
-		BondingEnabled: types.BoolValue(false),
-		Type:           types.StringValue("dhcp"),
-	}
-	defaultDeviceSwitchPortOverrideModel = DeviceSwitchPortOverrideResourceModel{}
+	defaultDeviceSwitchConfigNetworkResourceModel = DeviceSwitchStaticIPSettingResourceModel{}
+	defaultDeviceSwitchPortOverrideModel          = DeviceSwitchPortOverrideResourceModel{}
 )
 
 func NewDeviceSwitchResource() resource.Resource {
@@ -55,7 +56,7 @@ func (r *DeviceSwitchResource) Metadata(ctx context.Context, req resource.Metada
 }
 
 func (r *DeviceSwitchResource) Schema(ctx context.Context, req resource.SchemaRequest, resp *resource.SchemaResponse) {
-	resp.Schema = defaultDeviceSwitchResourceModel.schema(ctx, req, resp)
+	resp.Schema = defaultDeviceSwitchResourceModel.schema()
 }
 
 func (r *DeviceSwitchResource) Configure(ctx context.Context, req resource.ConfigureRequest, resp *resource.ConfigureResponse) {
@@ -209,7 +210,6 @@ type DeviceSwitchResourceModel struct {
 
 	// Configurable Values
 	Disabled            types.Bool                                       `tfsdk:"disabled"`
-	IPSettings          *DeviceSwitchConfigNetworkResourceModel          `tfsdk:"ip_settings"`
 	Mac                 types.String                                     `tfsdk:"mac"`
 	ManagementNetworkID types.String                                     `tfsdk:"management_network_id"`
 	Name                types.String                                     `tfsdk:"name"`
@@ -217,9 +217,10 @@ type DeviceSwitchResourceModel struct {
 	Site                types.String                                     `tfsdk:"site"`
 	SNMPContact         types.String                                     `tfsdk:"snmp_contact"`
 	SNMPLocation        types.String                                     `tfsdk:"snmp_location"`
+	StaticIPSettings    *DeviceSwitchStaticIPSettingResourceModel        `tfsdk:"static_ip_settings"`
 }
 
-func (m *DeviceSwitchResourceModel) schema(ctx context.Context, req resource.SchemaRequest, resp *resource.SchemaResponse) schema.Schema {
+func (m *DeviceSwitchResourceModel) schema() schema.Schema {
 	// Create a default for port overrides
 	overrideAttributes := types.ObjectType{AttrTypes: map[string]attr.Type{}}
 	for name, attribute := range defaultDeviceSwitchPortOverrideModel.schema().Attributes {
@@ -275,7 +276,6 @@ func (m *DeviceSwitchResourceModel) schema(ctx context.Context, req resource.Sch
 			// "flowctrl_enabled": schema.BoolAttribute{
 			// 	Computed: true,
 			// },
-			"ip_settings": defaultDeviceSwitchConfigNetworkResourceModel.schema(ctx, req, resp),
 			// TODO: (jtoyer) To enable these we need to set an exclusion on unifi.SettingGlobalSwitch
 			// "jumboframe_enabled": schema.BoolAttribute{
 			// 	Computed: true,
@@ -351,13 +351,14 @@ func (m *DeviceSwitchResourceModel) schema(ctx context.Context, req resource.Sch
 			// "stp_version": schema.StringAttribute{
 			// 	Computed: true,
 			// },
+			"static_ip_settings": defaultDeviceSwitchConfigNetworkResourceModel.schema(),
 		},
 	}
 }
 
 func (m *DeviceSwitchResourceModel) toUnifiDevice() (*unifi.Device, diag.Diagnostics) {
 	var diags diag.Diagnostics
-	portOverrides := make([]unifi.DevicePortOverrides, len(m.PortOverrides))
+	var portOverrides []unifi.DevicePortOverrides
 	for index, override := range m.PortOverrides {
 		i, err := strconv.Atoi(index)
 		if err != nil {
@@ -370,11 +371,11 @@ func (m *DeviceSwitchResourceModel) toUnifiDevice() (*unifi.Device, diag.Diagnos
 	}
 
 	if m.ManagementNetworkID.ValueString() == "" {
-		diags.AddAttributeError(path.Root("management_network_id"), "Invalid ID", fmt.Sprintf("The ID of the management network must not be empty"))
+		diags.AddAttributeError(path.Root("management_network_id"), "Invalid ID", "The ID of the management network must not be empty")
 	}
 
 	return &unifi.Device{
-		// ConfigNetwork: m.IPSettings.toUnifiStruct(),
+		ConfigNetwork: m.StaticIPSettings.toUnifiStruct(),
 		Disabled:      m.Disabled.ValueBoolPointer(),
 		MAC:           m.Mac.ValueStringPointer(),
 		MgmtNetworkID: m.ManagementNetworkID.ValueStringPointer(),
@@ -393,12 +394,12 @@ func newDeviceSwitchResourceModel(device *unifi.Device, site string, model Devic
 
 	// Configurable Values
 	model.Disabled = types.BoolPointerValue(device.Disabled)
-	model.IPSettings = newDeviceSwitchConfigNetworkResourceModel(device.ConfigNetwork, model.IPSettings)
 	model.Mac = types.StringPointerValue(device.MAC)
 	model.ManagementNetworkID = types.StringPointerValue(device.MgmtNetworkID)
 	model.Name = types.StringPointerValue(device.Name)
 	model.SNMPContact = types.StringPointerValue(device.SnmpContact)
 	model.SNMPLocation = types.StringPointerValue(device.SnmpLocation)
+	model.StaticIPSettings = newDeviceSwitchStaticIPSettingsResourceModel(device.ConfigNetwork, model.StaticIPSettings)
 
 	overrides := make(map[string]DeviceSwitchPortOverrideResourceModel, len(device.PortOverrides))
 	for _, override := range device.PortOverrides {
@@ -410,7 +411,7 @@ func newDeviceSwitchResourceModel(device *unifi.Device, site string, model Devic
 	return model
 }
 
-type DeviceSwitchConfigNetworkResourceModel struct {
+type DeviceSwitchStaticIPSettingResourceModel struct {
 	AlternativeDNS iptypes.IPv4Address `tfsdk:"alternative_dns"`
 	BondingEnabled types.Bool          `tfsdk:"bonding_enabled"`
 	DNSSuffix      types.String        `tfsdk:"dns_suffix"`
@@ -418,103 +419,53 @@ type DeviceSwitchConfigNetworkResourceModel struct {
 	IP             iptypes.IPv4Address `tfsdk:"ip"`
 	Netmask        iptypes.IPv4Address `tfsdk:"netmask"`
 	PreferredDNS   iptypes.IPv4Address `tfsdk:"preferred_dns"`
-	Type           types.String        `tfsdk:"type"`
 }
 
-func (m *DeviceSwitchConfigNetworkResourceModel) attributeTypes() map[string]attr.Type {
-	return map[string]attr.Type{
-		"alternative_dns": iptypes.IPv4AddressType{},
-		"bonding_enabled": types.BoolType,
-		"dns_suffix":      types.StringType,
-		"gateway":         iptypes.IPv4AddressType{},
-		"ip":              iptypes.IPv4AddressType{},
-		"netmask":         iptypes.IPv4AddressType{},
-		"preferred_dns":   iptypes.IPv4AddressType{},
-		"type":            types.StringType,
-	}
-}
-
-func (m *DeviceSwitchConfigNetworkResourceModel) schema(ctx context.Context, _ resource.SchemaRequest, resp *resource.SchemaResponse) schema.Attribute {
-	defaultValues, diags := types.ObjectValueFrom(ctx,
-		defaultDeviceSwitchConfigNetworkResourceModel.attributeTypes(),
-		defaultDeviceSwitchConfigNetworkResourceModel,
-	)
-
-	resp.Diagnostics.Append(diags...)
-
+func (m *DeviceSwitchStaticIPSettingResourceModel) schema() schema.Attribute {
 	return schema.SingleNestedAttribute{
-		Computed: true,
-		Optional: true,
+		MarkdownDescription: "Force the switch to use a static IP address instead of one assigned by DHCP.",
+		Optional:            true,
 		Attributes: map[string]schema.Attribute{
 			"alternative_dns": schema.StringAttribute{
 				Optional:   true,
 				CustomType: iptypes.IPv4AddressType{},
-				Validators: []validator.String{
-					// Can only be set when a preferred_dns is set
-					stringvalidator.AlsoRequires(path.MatchRelative().AtParent().AtName("preferred_dns")),
-				},
 			},
 			"bonding_enabled": schema.BoolAttribute{
+				Computed: true,
 				Optional: true,
+				Default:  booldefault.StaticBool(false),
 			},
 			"dns_suffix": schema.StringAttribute{
+				Computed: true,
 				Optional: true,
-				Validators: []validator.String{
-					// Can only be set when the IP is set
-					stringvalidator.AlsoRequires(path.MatchRelative().AtParent().AtName("ip")),
-				},
+				Default:  stringdefault.StaticString(""),
 			},
 			"gateway": schema.StringAttribute{
-				Optional:   true,
+				Required:   true,
 				CustomType: iptypes.IPv4AddressType{},
 			},
 			"ip": schema.StringAttribute{
-				Optional:   true,
+				Required:   true,
 				CustomType: iptypes.IPv4AddressType{},
 			},
 			"netmask": schema.StringAttribute{
-				Optional:   true,
+				Required:   true,
 				CustomType: iptypes.IPv4AddressType{},
 				Validators: []validator.String{
-					stringvalidator.RegexMatches(regexp.MustCompile("^((128|192|224|240|248|252|254)\\.0\\.0\\.0)|(255\\.(((0|128|192|224|240|248|252|254)\\.0\\.0)|(255\\.(((0|128|192|224|240|248|252|254)\\.0)|255\\.(0|128|192|224|240|248|252|254)))))$"), "invalid net mask"),
+					stringvalidator.RegexMatches(regexp.MustCompile(`^((128|192|224|240|248|252|254)\.0\.0\.0)|(255\.(((0|128|192|224|240|248|252|254)\.0\.0)|(255\.(((0|128|192|224|240|248|252|254)\.0)|255\.(0|128|192|224|240|248|252|254)))))$`), "invalid net mask"),
 				},
 			},
 			"preferred_dns": schema.StringAttribute{
-				Optional:   true,
+				Required:   true,
 				CustomType: iptypes.IPv4AddressType{},
 			},
-			"type": schema.StringAttribute{
-				Computed: true,
-				Optional: true,
-				Default:  stringdefault.StaticString("dhcp"),
-				Validators: []validator.String{
-					stringvalidator.OneOf("dhcp", "static"),
-					customvalidator.StringValueWithPaths("static",
-						path.MatchRelative().AtParent().AtName("gateway"),
-						path.MatchRelative().AtParent().AtName("ip"),
-						path.MatchRelative().AtParent().AtName("netmask"),
-						path.MatchRelative().AtParent().AtName("preferred_dns"),
-					),
-					customvalidator.StringValueConflictsWithPaths("dhcp",
-						path.MatchRelative().AtParent().AtName("alternative_dns"),
-						path.MatchRelative().AtParent().AtName("bonding_enabled"),
-						path.MatchRelative().AtParent().AtName("dns_suffix"),
-						path.MatchRelative().AtParent().AtName("gateway"),
-						path.MatchRelative().AtParent().AtName("ip"),
-						path.MatchRelative().AtParent().AtName("netmask"),
-						path.MatchRelative().AtParent().AtName("preferred_dns"),
-					),
-				},
-			},
 		},
-		Default:    objectdefault.StaticValue(defaultValues),
-		Validators: []validator.Object{},
 	}
 }
 
-func (m *DeviceSwitchConfigNetworkResourceModel) toUnifiStruct() *unifi.DeviceConfigNetwork {
+func (m *DeviceSwitchStaticIPSettingResourceModel) toUnifiStruct() *unifi.DeviceConfigNetwork {
 	if m == nil {
-		return nil
+		return &unifi.DeviceConfigNetwork{Type: utils.StringPtr(configNetworkTypeDHCP)}
 	}
 
 	return &unifi.DeviceConfigNetwork{
@@ -526,27 +477,29 @@ func (m *DeviceSwitchConfigNetworkResourceModel) toUnifiStruct() *unifi.DeviceCo
 		IP:        m.IP.ValueStringPointer(),
 		Netmask:   m.Netmask.ValueStringPointer(),
 		DNS1:      m.PreferredDNS.ValueStringPointer(),
-		Type:      m.Type.ValueStringPointer(),
+		Type:      utils.StringPtr(configNetworkTypeStatic),
 	}
 }
 
-func newDeviceSwitchConfigNetworkResourceModel(network *unifi.DeviceConfigNetwork, model *DeviceSwitchConfigNetworkResourceModel) *DeviceSwitchConfigNetworkResourceModel {
+func newDeviceSwitchStaticIPSettingsResourceModel(network *unifi.DeviceConfigNetwork, model *DeviceSwitchStaticIPSettingResourceModel) *DeviceSwitchStaticIPSettingResourceModel {
+	if *network.Type == configNetworkTypeDHCP {
+		return nil
+	}
+
 	if model == nil {
-		model = &DeviceSwitchConfigNetworkResourceModel{Type: types.StringValue("dhcp")}
+		model = &DeviceSwitchStaticIPSettingResourceModel{}
 	}
 
-	if network == nil {
-		return model
+	if network.DNS2 != nil && *network.DNS2 != "" {
+		model.AlternativeDNS = iptypes.NewIPv4AddressPointerValue(network.DNS2)
 	}
 
-	// model.AlternativeDNS = iptypes.NewIPv4AddressPointerValue(network.DNS2)
-	// model.BondingEnabled = types.BoolPointerValue(network.BondingEnabled)
-	// model.DNSSuffix = types.StringPointerValue(network.DNSsuffix)
-	// model.Gateway = iptypes.NewIPv4AddressPointerValue(network.Gateway)
-	// model.IP = iptypes.NewIPv4AddressPointerValue(network.IP)
-	// model.Netmask = iptypes.NewIPv4AddressPointerValue(network.Netmask)
-	// model.PreferredDNS = iptypes.NewIPv4AddressPointerValue(network.DNS1)
-	// model.Type = types.StringPointerValue(network.Type)
+	model.BondingEnabled = types.BoolPointerValue(network.BondingEnabled)
+	model.DNSSuffix = types.StringPointerValue(network.DNSsuffix)
+	model.Gateway = iptypes.NewIPv4AddressPointerValue(network.Gateway)
+	model.IP = iptypes.NewIPv4AddressPointerValue(network.IP)
+	model.Netmask = iptypes.NewIPv4AddressPointerValue(network.Netmask)
+	model.PreferredDNS = iptypes.NewIPv4AddressPointerValue(network.DNS1)
 
 	return model
 }

@@ -27,8 +27,8 @@ func TestAccDeviceSwitchDataSource(t *testing.T) {
 		}
 
 		for _, device := range devices {
-			if device.Type == "usw" {
-				switchMac = device.MAC
+			if *device.Type == "usw" {
+				switchMac = *device.MAC
 				break
 			}
 		}
