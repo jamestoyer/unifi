@@ -34,6 +34,9 @@ const (
 	ledOverrideDefault = "default"
 	ledOverrideOff     = "off"
 	ledOverrideOn      = "on"
+
+	portOverrideSettingPreferenceAuto   = "auto"
+	portOverrideSettingPreferenceManual = "manual"
 )
 
 var (
@@ -388,10 +391,10 @@ func (m *DeviceSwitchResourceModel) toUnifiDevice() (*unifi.Device, diag.Diagnos
 		MAC:           m.Mac.ValueStringPointer(),
 		MgmtNetworkID: m.ManagementNetworkID.ValueStringPointer(),
 		Name:          m.Name.ValueStringPointer(),
-		// PortOverrides: portOverrides,
-		PortOverrides: []unifi.DevicePortOverrides{},
-		SnmpContact:   m.SNMPContact.ValueStringPointer(),
-		SnmpLocation:  m.SNMPLocation.ValueStringPointer(),
+		PortOverrides: portOverrides,
+		// PortOverrides: []unifi.DevicePortOverrides{},
+		SnmpContact:  m.SNMPContact.ValueStringPointer(),
+		SnmpLocation: m.SNMPLocation.ValueStringPointer(),
 	}
 
 	if m.LEDOverride != nil {
@@ -562,8 +565,8 @@ func (m *DeviceSwitchLEDOverrideResourceModel) GetOverrideState() types.String {
 }
 
 func newDeviceSwitchLEDOverrideResourceModel(device *unifi.Device, model *DeviceSwitchLEDOverrideResourceModel) *DeviceSwitchLEDOverrideResourceModel {
-	if *device.LedOverride == ledOverrideDefault {
-		return nil
+	if device.LedOverride == nil || *device.LedOverride == ledOverrideDefault {
+		return &DeviceSwitchLEDOverrideResourceModel{Enabled: types.BoolValue(true)}
 	}
 
 	if model == nil {
@@ -582,9 +585,6 @@ func newDeviceSwitchLEDOverrideResourceModel(device *unifi.Device, model *Device
 }
 
 type DeviceSwitchPortOverrideResourceModel struct {
-	// Computed Values
-	AdvancedSettingsMode types.String `tfsdk:"advanced_settings_mode"`
-
 	// Configurable Values
 	FullDuplex types.Bool   `tfsdk:"full_duplex"`
 	LinkSpeed  types.Int32  `tfsdk:"link_speed"`
@@ -595,16 +595,16 @@ type DeviceSwitchPortOverrideResourceModel struct {
 func (m *DeviceSwitchPortOverrideResourceModel) schema() schema.NestedAttributeObject {
 	return schema.NestedAttributeObject{
 		Attributes: map[string]schema.Attribute{
-			"advanced_settings_mode": schema.StringAttribute{
-				Computed: true,
-				// Default:  stringdefault.StaticString("auto"),
-				PlanModifiers: []planmodifier.String{
-					CalculatePortOverrideAdvancedSettingsValue(),
-				},
-				Validators: []validator.String{
-					stringvalidator.OneOf("auto", "manual"),
-				},
-			},
+			// "advanced_settings_mode": schema.StringAttribute{
+			// 	Computed: true,
+			// 	// Default:  stringdefault.StaticString("auto"),
+			// 	PlanModifiers: []planmodifier.String{
+			// 		CalculatePortOverrideAdvancedSettingsValue(),
+			// 	},
+			// 	Validators: []validator.String{
+			// 		stringvalidator.OneOf("auto", "manual"),
+			// 	},
+			// },
 			// "aggregate_num_ports": schema.Int32Attribute{
 			// 	Optional: true,
 			// 	Validators: []validator.Int32{
@@ -683,9 +683,7 @@ func (m *DeviceSwitchPortOverrideResourceModel) schema() schema.NestedAttributeO
 			// 	Optional: true,
 			// },
 			"operation": schema.StringAttribute{
-				Computed: true,
 				Optional: true,
-				Default:  stringdefault.StaticString("switch"),
 				Validators: []validator.String{
 					stringvalidator.OneOf("switch", "mirror", "aggregate"),
 				},
@@ -825,9 +823,23 @@ func (m *DeviceSwitchPortOverrideResourceModel) schema() schema.NestedAttributeO
 }
 
 func (m *DeviceSwitchPortOverrideResourceModel) toUnifiStruct(portIndex int) unifi.DevicePortOverrides {
+	var settingPreference string
+	var autoNegotiateLinkSpeed bool
+	switch {
+	case !m.Operation.IsNull():
+		settingPreference = portOverrideSettingPreferenceManual
+	case !m.LinkSpeed.IsNull() || !m.FullDuplex.IsNull():
+		autoNegotiateLinkSpeed = false
+		settingPreference = portOverrideSettingPreferenceManual
+	default:
+		autoNegotiateLinkSpeed = true
+		settingPreference = portOverrideSettingPreferenceAuto
+	}
+
 	return unifi.DevicePortOverrides{
-		// ComputedValues
-		SettingPreference: m.AdvancedSettingsMode.ValueStringPointer(),
+		// Computed values
+		Autoneg:           &autoNegotiateLinkSpeed,
+		SettingPreference: &settingPreference,
 
 		// Configurable Values
 		FullDuplex: m.FullDuplex.ValueBoolPointer(),
@@ -839,20 +851,7 @@ func (m *DeviceSwitchPortOverrideResourceModel) toUnifiStruct(portIndex int) uni
 }
 
 func newDeviceSwitchPortOverrideResourceModel(override unifi.DevicePortOverrides) DeviceSwitchPortOverrideResourceModel {
-	var advancedSettingsMode string
-	switch {
-	case override.SettingPreference != nil && *override.SettingPreference != "":
-		advancedSettingsMode = *override.SettingPreference
-	case override.Speed != nil && *override.Speed > 0:
-		advancedSettingsMode = "manual"
-	default:
-		advancedSettingsMode = "auto"
-	}
-
 	return DeviceSwitchPortOverrideResourceModel{
-		// Computed Values
-		AdvancedSettingsMode: types.StringValue(advancedSettingsMode),
-
 		// Configurable Values
 		FullDuplex: types.BoolPointerValue(override.FullDuplex),
 		LinkSpeed:  types.Int32PointerValue(utils.Int32PtrValue(override.Speed)),
@@ -861,40 +860,41 @@ func newDeviceSwitchPortOverrideResourceModel(override unifi.DevicePortOverrides
 	}
 }
 
-// portOverrideAdvancedSettingsValue implements the plan modifier.
-type portOverrideAdvancedSettingsValue struct{}
-
-// Description returns a human-readable description of the plan modifier.
-func (m portOverrideAdvancedSettingsValue) Description(ctx context.Context) string {
-	return "The value will be auto when no advance settings are specified and manual when any are."
-}
-
-// MarkdownDescription returns a markdown description of the plan modifier.
-func (m portOverrideAdvancedSettingsValue) MarkdownDescription(_ context.Context) string {
-	return "The value will be `auto` when no advance settings are specified and `manual` when any are."
-}
-
-// PlanModifyString implements the plan modification logic.
-func (m portOverrideAdvancedSettingsValue) PlanModifyString(ctx context.Context, req planmodifier.StringRequest, resp *planmodifier.StringResponse) {
-	// Do nothing if there is no state value.
-	if req.StateValue.IsNull() {
-		return
-	}
-
-	var linkSpeed types.Int32
-	req.Config.GetAttribute(ctx, req.Path.ParentPath().AtName("link_speed"), &linkSpeed)
-	mode := "auto"
-	switch {
-	case linkSpeed.ValueInt32() > 0:
-		mode = "manual"
-	}
-
-	resp.PlanValue = types.StringValue(mode)
-}
-
-// CalculatePortOverrideAdvancedSettingsValue returns a plan modifier that calculates the value of a port override's
-// advanced settings, based upon other fields that are set. This removes the need for the user to automatically set these.
-
-func CalculatePortOverrideAdvancedSettingsValue() planmodifier.String {
-	return portOverrideAdvancedSettingsValue{}
-}
+//
+// // portOverrideAdvancedSettingsValue implements the plan modifier.
+// type portOverrideAdvancedSettingsValue struct{}
+//
+// // Description returns a human-readable description of the plan modifier.
+// func (m portOverrideAdvancedSettingsValue) Description(ctx context.Context) string {
+// 	return "The value will be auto when no advance settings are specified and manual when any are."
+// }
+//
+// // MarkdownDescription returns a markdown description of the plan modifier.
+// func (m portOverrideAdvancedSettingsValue) MarkdownDescription(_ context.Context) string {
+// 	return "The value will be `auto` when no advance settings are specified and `manual` when any are."
+// }
+//
+// // PlanModifyString implements the plan modification logic.
+// func (m portOverrideAdvancedSettingsValue) PlanModifyString(ctx context.Context, req planmodifier.StringRequest, resp *planmodifier.StringResponse) {
+// 	// Do nothing if there is no state value.
+// 	if req.StateValue.IsNull() {
+// 		return
+// 	}
+//
+// 	var linkSpeed types.Int32
+// 	req.Config.GetAttribute(ctx, req.Path.ParentPath().AtName("link_speed"), &linkSpeed)
+// 	mode := "auto"
+// 	switch {
+// 	case linkSpeed.ValueInt32() > 0:
+// 		mode = "manual"
+// 	}
+//
+// 	resp.PlanValue = types.StringValue(mode)
+// }
+//
+// // CalculatePortOverrideAdvancedSettingsValue returns a plan modifier that calculates the value of a port override's
+// // advanced settings, based upon other fields that are set. This removes the need for the user to automatically set these.
+//
+// func CalculatePortOverrideAdvancedSettingsValue() planmodifier.String {
+// 	return portOverrideAdvancedSettingsValue{}
+// }

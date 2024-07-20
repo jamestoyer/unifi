@@ -57,10 +57,6 @@ Optional:
 - `operation` (String)
 - `poe_mode` (String)
 
-Read-Only:
-
-- `advanced_settings_mode` (String)
-
 
 <a id="nestedatt--static_ip_settings"></a>
 ### Nested Schema for `static_ip_settings`
