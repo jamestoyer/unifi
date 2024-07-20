@@ -15,6 +15,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/booldefault"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/mapdefault"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema/objectdefault"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringdefault"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
@@ -44,7 +45,9 @@ var (
 	_ resource.Resource                = &DeviceSwitchResource{}
 	_ resource.ResourceWithImportState = &DeviceSwitchResource{}
 
-	defaultDeviceSwitchLEDOverrideResourceModel      = DeviceSwitchLEDOverrideResourceModel{}
+	defaultDeviceSwitchLEDOverrideResourceModel = DeviceSwitchLEDSettingsResourceModel{
+		Enabled: types.BoolValue(true),
+	}
 	defaultDeviceSwitchPortOverrideModel             = DeviceSwitchPortOverrideResourceModel{}
 	defaultDeviceSwitchResourceModel                 = DeviceSwitchResourceModel{}
 	defaultDeviceSwitchStaticIPSettingsResourceModel = DeviceSwitchStaticIPSettingResourceModel{}
@@ -64,7 +67,7 @@ func (r *DeviceSwitchResource) Metadata(ctx context.Context, req resource.Metada
 }
 
 func (r *DeviceSwitchResource) Schema(ctx context.Context, req resource.SchemaRequest, resp *resource.SchemaResponse) {
-	resp.Schema = defaultDeviceSwitchResourceModel.schema()
+	resp.Schema = defaultDeviceSwitchResourceModel.schema(ctx, resp)
 }
 
 func (r *DeviceSwitchResource) Configure(ctx context.Context, req resource.ConfigureRequest, resp *resource.ConfigureResponse) {
@@ -218,7 +221,7 @@ type DeviceSwitchResourceModel struct {
 
 	// Configurable Values
 	Disabled            types.Bool                                       `tfsdk:"disabled"`
-	LEDOverride         *DeviceSwitchLEDOverrideResourceModel            `tfsdk:"led_override"`
+	LEDSettings         *DeviceSwitchLEDSettingsResourceModel            `tfsdk:"led_settings"`
 	Mac                 types.String                                     `tfsdk:"mac"`
 	ManagementNetworkID types.String                                     `tfsdk:"management_network_id"`
 	Name                types.String                                     `tfsdk:"name"`
@@ -229,7 +232,7 @@ type DeviceSwitchResourceModel struct {
 	StaticIPSettings    *DeviceSwitchStaticIPSettingResourceModel        `tfsdk:"static_ip_settings"`
 }
 
-func (m *DeviceSwitchResourceModel) schema() schema.Schema {
+func (m *DeviceSwitchResourceModel) schema(ctx context.Context, resp *resource.SchemaResponse) schema.Schema {
 	// Create a default for port overrides
 	overrideAttributes := types.ObjectType{AttrTypes: map[string]attr.Type{}}
 	for name, attribute := range defaultDeviceSwitchPortOverrideModel.schema().Attributes {
@@ -289,7 +292,7 @@ func (m *DeviceSwitchResourceModel) schema() schema.Schema {
 			// "jumboframe_enabled": schema.BoolAttribute{
 			// 	Computed: true,
 			// },
-			"led_override": defaultDeviceSwitchLEDOverrideResourceModel.schema(),
+			"led_settings": defaultDeviceSwitchLEDOverrideResourceModel.schema(ctx, resp),
 			"mac": schema.StringAttribute{
 				MarkdownDescription: "The MAC address of the device",
 				Required:            true,
@@ -385,21 +388,18 @@ func (m *DeviceSwitchResourceModel) toUnifiDevice() (*unifi.Device, diag.Diagnos
 	}
 
 	device := &unifi.Device{
-		ConfigNetwork: m.StaticIPSettings.toUnifiStruct(),
-		Disabled:      m.Disabled.ValueBoolPointer(),
-		LedOverride:   m.LEDOverride.GetOverrideState().ValueStringPointer(),
-		MAC:           m.Mac.ValueStringPointer(),
-		MgmtNetworkID: m.ManagementNetworkID.ValueStringPointer(),
-		Name:          m.Name.ValueStringPointer(),
-		PortOverrides: portOverrides,
+		ConfigNetwork:              m.StaticIPSettings.toUnifiStruct(),
+		Disabled:                   m.Disabled.ValueBoolPointer(),
+		LedOverride:                m.LEDSettings.GetOverrideState().ValueStringPointer(),
+		LedOverrideColor:           m.LEDSettings.Color.ValueStringPointer(),
+		LedOverrideColorBrightness: utils.IntPtrValue(m.LEDSettings.Brightness.ValueInt32Pointer()),
+		MAC:                        m.Mac.ValueStringPointer(),
+		MgmtNetworkID:              m.ManagementNetworkID.ValueStringPointer(),
+		Name:                       m.Name.ValueStringPointer(),
+		PortOverrides:              portOverrides,
 		// PortOverrides: []unifi.DevicePortOverrides{},
 		SnmpContact:  m.SNMPContact.ValueStringPointer(),
 		SnmpLocation: m.SNMPLocation.ValueStringPointer(),
-	}
-
-	if m.LEDOverride != nil {
-		device.LedOverrideColor = m.LEDOverride.Color.ValueStringPointer()
-		device.LedOverrideColorBrightness = utils.IntPtrValue(m.LEDOverride.Brightness.ValueInt32Pointer())
 	}
 
 	return device, diags
@@ -413,7 +413,7 @@ func newDeviceSwitchResourceModel(device *unifi.Device, site string, model Devic
 
 	// Configurable Values
 	model.Disabled = types.BoolPointerValue(device.Disabled)
-	model.LEDOverride = newDeviceSwitchLEDOverrideResourceModel(device, model.LEDOverride)
+	model.LEDSettings = newDeviceSwitchLEDOverrideResourceModel(device, model.LEDSettings)
 	model.Mac = types.StringPointerValue(device.MAC)
 	model.ManagementNetworkID = types.StringPointerValue(device.MgmtNetworkID)
 	model.Name = types.StringPointerValue(device.Name)
@@ -524,16 +524,46 @@ func newDeviceSwitchStaticIPSettingsResourceModel(network *unifi.DeviceConfigNet
 	return model
 }
 
-type DeviceSwitchLEDOverrideResourceModel struct {
+type DeviceSwitchLEDSettingsResourceModel struct {
 	Brightness types.Int32  `tfsdk:"brightness"`
 	Color      types.String `tfsdk:"color"`
 	Enabled    types.Bool   `tfsdk:"enabled"`
 }
 
-func (m *DeviceSwitchLEDOverrideResourceModel) schema() schema.Attribute {
+func (m *DeviceSwitchLEDSettingsResourceModel) schema(ctx context.Context, resp *resource.SchemaResponse) schema.Attribute {
+	attrs := map[string]schema.Attribute{
+		"brightness": schema.Int32Attribute{
+			Optional: true,
+			Validators: []validator.Int32{
+				int32validator.Between(0, 100),
+			},
+		},
+		"color": schema.StringAttribute{
+			Optional: true,
+			Validators: []validator.String{
+				stringvalidator.RegexMatches(regexp.MustCompile(`^#(?:[0-9a-fA-F]{3}){1,2}$`), "invalid color code"),
+			},
+		},
+		"enabled": schema.BoolAttribute{
+			Computed: true,
+			Optional: true,
+			Default:  booldefault.StaticBool(true),
+		},
+	}
+
+	typeAttrs := map[string]attr.Type{}
+	for name, attribute := range attrs {
+		typeAttrs[name] = attribute.GetType()
+	}
+
+	defaultValue, diags := types.ObjectValueFrom(ctx, typeAttrs, defaultDeviceSwitchLEDOverrideResourceModel)
+	resp.Diagnostics.Append(diags...)
+
 	return schema.SingleNestedAttribute{
 		MarkdownDescription: "Overrides for the switch LEDs.",
+		Computed:            true,
 		Optional:            true,
+		Default:             objectdefault.StaticValue(defaultValue),
 		Attributes: map[string]schema.Attribute{
 			"brightness": schema.Int32Attribute{
 				Optional: true,
@@ -556,7 +586,7 @@ func (m *DeviceSwitchLEDOverrideResourceModel) schema() schema.Attribute {
 	}
 }
 
-func (m *DeviceSwitchLEDOverrideResourceModel) GetOverrideState() types.String {
+func (m *DeviceSwitchLEDSettingsResourceModel) GetOverrideState() types.String {
 	if m == nil || m.Enabled.ValueBool() {
 		return types.StringValue(ledOverrideOn)
 	}
@@ -564,13 +594,14 @@ func (m *DeviceSwitchLEDOverrideResourceModel) GetOverrideState() types.String {
 	return types.StringValue(ledOverrideOff)
 }
 
-func newDeviceSwitchLEDOverrideResourceModel(device *unifi.Device, model *DeviceSwitchLEDOverrideResourceModel) *DeviceSwitchLEDOverrideResourceModel {
-	if device.LedOverride == nil || *device.LedOverride == ledOverrideDefault {
-		return &DeviceSwitchLEDOverrideResourceModel{Enabled: types.BoolValue(true)}
+func newDeviceSwitchLEDOverrideResourceModel(device *unifi.Device, model *DeviceSwitchLEDSettingsResourceModel) *DeviceSwitchLEDSettingsResourceModel {
+	if model == nil {
+		model = &DeviceSwitchLEDSettingsResourceModel{}
 	}
 
-	if model == nil {
-		model = &DeviceSwitchLEDOverrideResourceModel{}
+	if device.LedOverride == nil || *device.LedOverride == ledOverrideDefault {
+		model.Enabled = types.BoolValue(true)
+		return model
 	}
 
 	model.Brightness = types.Int32PointerValue(utils.Int32PtrValue(device.LedOverrideColorBrightness))
