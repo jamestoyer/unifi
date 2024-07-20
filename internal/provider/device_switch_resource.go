@@ -38,6 +38,9 @@ const (
 
 	portOverrideSettingPreferenceAuto   = "auto"
 	portOverrideSettingPreferenceManual = "manual"
+
+	portOverrideForwardAll      = "all"
+	portOverrideForwardDisabled = "disabled"
 )
 
 var (
@@ -564,25 +567,7 @@ func (m *DeviceSwitchLEDSettingsResourceModel) schema(ctx context.Context, resp 
 		Computed:            true,
 		Optional:            true,
 		Default:             objectdefault.StaticValue(defaultValue),
-		Attributes: map[string]schema.Attribute{
-			"brightness": schema.Int32Attribute{
-				Optional: true,
-				Validators: []validator.Int32{
-					int32validator.Between(0, 100),
-				},
-			},
-			"color": schema.StringAttribute{
-				Optional: true,
-				Validators: []validator.String{
-					stringvalidator.RegexMatches(regexp.MustCompile(`^#(?:[0-9a-fA-F]{3}){1,2}$`), "invalid color code"),
-				},
-			},
-			"enabled": schema.BoolAttribute{
-				Computed: true,
-				Optional: true,
-				Default:  booldefault.StaticBool(true),
-			},
-		},
+		Attributes:          attrs,
 	}
 }
 
@@ -617,35 +602,30 @@ func newDeviceSwitchLEDOverrideResourceModel(device *unifi.Device, model *Device
 
 type DeviceSwitchPortOverrideResourceModel struct {
 	// Configurable Values
-	FullDuplex types.Bool   `tfsdk:"full_duplex"`
-	LinkSpeed  types.Int32  `tfsdk:"link_speed"`
-	Operation  types.String `tfsdk:"operation"`
-	POEMode    types.String `tfsdk:"poe_mode"`
+	Disabled        types.Bool   `tfsdk:"disabled"`
+	FullDuplex      types.Bool   `tfsdk:"full_duplex"`
+	LinkSpeed       types.Int32  `tfsdk:"link_speed"`
+	Name            types.String `tfsdk:"name"`
+	NativeNetworkID types.String `tfsdk:"native_network_id"`
+	Operation       types.String `tfsdk:"operation"`
+	POEMode         types.String `tfsdk:"poe_mode"`
+	PortProfileID   types.String `tfsdk:"port_profile_id"`
 }
 
 func (m *DeviceSwitchPortOverrideResourceModel) schema() schema.NestedAttributeObject {
 	return schema.NestedAttributeObject{
 		Attributes: map[string]schema.Attribute{
-			// "advanced_settings_mode": schema.StringAttribute{
-			// 	Computed: true,
-			// 	// Default:  stringdefault.StaticString("auto"),
-			// 	PlanModifiers: []planmodifier.String{
-			// 		CalculatePortOverrideAdvancedSettingsValue(),
-			// 	},
-			// 	Validators: []validator.String{
-			// 		stringvalidator.OneOf("auto", "manual"),
-			// 	},
-			// },
 			// "aggregate_num_ports": schema.Int32Attribute{
 			// 	Optional: true,
 			// 	Validators: []validator.Int32{
 			// 		int32validator.Between(1, 8),
 			// 	},
 			// },
-			// "autoneg": schema.BoolAttribute{
-			// 	// Computed: true,
-			// 	Optional: true,
-			// },
+			"disabled": schema.BoolAttribute{
+				Computed: true,
+				Optional: true,
+				Default:  booldefault.StaticBool(false),
+			},
 			// "dot1x_ctrl": schema.StringAttribute{
 			// 	Computed: true,
 			// },
@@ -660,6 +640,7 @@ func (m *DeviceSwitchPortOverrideResourceModel) schema() schema.NestedAttributeO
 			// 	Computed: true,
 			// },
 			// "excluded_network_ids": schema.ListAttribute{
+			// 	MarkdownDescription: "A list of net"
 			// 	ElementType: types.StringType,
 			// 	Optional:    true,
 			// },
@@ -673,6 +654,7 @@ func (m *DeviceSwitchPortOverrideResourceModel) schema() schema.NestedAttributeO
 				Optional: true,
 				Validators: []validator.Bool{
 					boolvalidator.AlsoRequires(path.MatchRelative().AtParent().AtName("link_speed")),
+					boolvalidator.ConflictsWith(path.MatchRelative().AtParent().AtName("port_profile_id")),
 				},
 			},
 			// "isolation": schema.BoolAttribute{
@@ -681,12 +663,12 @@ func (m *DeviceSwitchPortOverrideResourceModel) schema() schema.NestedAttributeO
 			// 	Computed: true,
 			// },
 			"link_speed": schema.Int32Attribute{
-				MarkdownDescription: "An override for the link speed of the port. Setting this to `0` indicates that" +
-					" this is auto negotiated",
-				Optional: true,
+				MarkdownDescription: "An override for the link speed of the port.",
+				Optional:            true,
 				Validators: []validator.Int32{
-					int32validator.OneOf(0, 10, 100, 1000, 2500, 5000, 10000, 20000, 25000, 40000, 50000, 100000),
+					int32validator.OneOf(10, 100, 1000, 2500, 5000, 10000, 20000, 25000, 40000, 50000, 100000),
 					int32validator.AlsoRequires(path.MatchRelative().AtParent().AtName("full_duplex")),
+					int32validator.ConflictsWith(path.MatchRelative().AtParent().AtName("port_profile_id")),
 				},
 			},
 			// "lldp_med_enabled": schema.BoolAttribute{
@@ -701,38 +683,50 @@ func (m *DeviceSwitchPortOverrideResourceModel) schema() schema.NestedAttributeO
 			// "mirror_port_idx": schema.Int32Attribute{
 			// 	Computed: true,
 			// },
-			// "name": schema.StringAttribute{
-			// 	Required: true,
-			// 	Validators: []validator.String{
-			// 		stringvalidator.LengthBetween(0, 128),
-			// 	},
-			// },
-			// "native_network_id": schema.StringAttribute{
-			// 	MarkdownDescription: "The native network used for VLAN traffic, i.e. not tagged with a " +
-			// 		"VLAN ID. Untagged traffic from devices connected to this port will be placed on to " +
-			// 		"the selected VLAN",
-			// 	Optional: true,
-			// },
-			"operation": schema.StringAttribute{
+			"name": schema.StringAttribute{
 				Optional: true,
 				Validators: []validator.String{
+					stringvalidator.LengthBetween(0, 128),
+				},
+			},
+			"native_network_id": schema.StringAttribute{
+				MarkdownDescription: "The native network used for VLAN traffic, i.e. not tagged with a " +
+					"VLAN ID. Untagged traffic from devices connected to this port will be placed on to " +
+					"the selected VLAN. Setting this to and empty string (which this defaults to) will prevent" +
+					" untagged traffic from being placed in to a VLAN by default.",
+				Optional: true,
+				Validators: []validator.String{
+					stringvalidator.ConflictsWith(path.MatchRelative().AtParent().AtName("port_profile_id")),
+				},
+			},
+			"operation": schema.StringAttribute{
+				Computed: true,
+				Optional: true,
+				// TODO: (jtoyer) Create a custom plan modifier to deal with when a profile ID is set
+				Default: stringdefault.StaticString("switch"),
+				Validators: []validator.String{
 					stringvalidator.OneOf("switch", "mirror", "aggregate"),
+					stringvalidator.ConflictsWith(path.MatchRelative().AtParent().AtName("port_profile_id")),
 				},
 			},
 			"poe_mode": schema.StringAttribute{
 				Computed: true,
 				Optional: true,
-				Default:  stringdefault.StaticString("auto"),
+				// TODO: (jtoyer) Create a custom plan modifier to deal with when a profile ID is set
+				Default: stringdefault.StaticString("auto"),
 				Validators: []validator.String{
 					stringvalidator.OneOf("auto", "pasv24", "passthrough", "off"),
+					stringvalidator.ConflictsWith(path.MatchRelative().AtParent().AtName("port_profile_id")),
 				},
 			},
 			// "port_keepalive_enabled": schema.BoolAttribute{
 			// 	Computed: true,
 			// },
-			// "port_profile_id": schema.StringAttribute{
-			// 	Computed: true,
-			// },
+			"port_profile_id": schema.StringAttribute{
+				MarkdownDescription: "The ID of a port profile to assign to the port. This will override nearly all" +
+					" local settings of the port.",
+				Optional: true,
+			},
 			// "port_security_enabled": schema.BoolAttribute{
 			// 	Computed: true,
 			// },
@@ -867,27 +861,60 @@ func (m *DeviceSwitchPortOverrideResourceModel) toUnifiStruct(portIndex int) uni
 		settingPreference = portOverrideSettingPreferenceAuto
 	}
 
+	var forward string
+	switch {
+	case m.Disabled.ValueBool():
+		forward = portOverrideForwardDisabled
+
+	default:
+		forward = portOverrideForwardAll
+	}
+
 	return unifi.DevicePortOverrides{
 		// Computed values
 		Autoneg:           &autoNegotiateLinkSpeed,
 		SettingPreference: &settingPreference,
 
 		// Configurable Values
+		Forward:    utils.StringPtr(forward),
 		FullDuplex: m.FullDuplex.ValueBoolPointer(),
-		OpMode:     m.Operation.ValueStringPointer(),
-		PoeMode:    m.POEMode.ValueStringPointer(),
-		PortIDX:    &portIndex,
-		Speed:      utils.IntPtrValue(m.LinkSpeed.ValueInt32Pointer()),
+		Name:       m.Name.ValueStringPointer(),
+		// NATiveNetworkID: m.Name.ValueStringPointer(),
+		OpMode:        m.Operation.ValueStringPointer(),
+		PoeMode:       m.POEMode.ValueStringPointer(),
+		PortIDX:       &portIndex,
+		PortProfileID: m.PortProfileID.ValueStringPointer(),
+		Speed:         utils.IntPtrValue(m.LinkSpeed.ValueInt32Pointer()),
 	}
 }
 
 func newDeviceSwitchPortOverrideResourceModel(override unifi.DevicePortOverrides) DeviceSwitchPortOverrideResourceModel {
+	var disabled bool
+	var nativeNetworkID *string
+	if override.Forward != nil {
+		switch *override.Forward {
+		case portOverrideForwardDisabled:
+			disabled = true
+			nativeNetworkID = utils.StringPtr("")
+		}
+	} else {
+		nativeNetworkID = override.NATiveNetworkID
+	}
+
+	if override.Forward != nil && *override.Forward == portOverrideForwardDisabled {
+		disabled = true
+	}
+
 	return DeviceSwitchPortOverrideResourceModel{
 		// Configurable Values
-		FullDuplex: types.BoolPointerValue(override.FullDuplex),
-		LinkSpeed:  types.Int32PointerValue(utils.Int32PtrValue(override.Speed)),
-		Operation:  types.StringPointerValue(override.OpMode),
-		POEMode:    types.StringPointerValue(override.PoeMode),
+		Disabled:        types.BoolValue(disabled),
+		FullDuplex:      types.BoolPointerValue(override.FullDuplex),
+		LinkSpeed:       types.Int32PointerValue(utils.Int32PtrValue(override.Speed)),
+		Name:            types.StringPointerValue(override.Name),
+		NativeNetworkID: types.StringPointerValue(nativeNetworkID),
+		Operation:       types.StringPointerValue(override.OpMode),
+		POEMode:         types.StringPointerValue(override.PoeMode),
+		PortProfileID:   types.StringPointerValue(override.PortProfileID),
 	}
 }
 

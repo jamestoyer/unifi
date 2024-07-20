@@ -37,12 +37,30 @@ resource "unifi_device_switch" "example" {
 
     port_overrides = {
       "39" = {
-#         full_duplex = true
-#         link_speed = "100"
+        full_duplex = true
+        link_speed = "100"
+        native_network_id = "669c0336329aae15c4b318f2"
         operation = "switch"
       }
       "40" = {
+        native_network_id = "669c0336329aae15c4b318f2"
         poe_mode = "off"
+      }
+      "41"= {
+        native_network_id = "669c0336329aae15c4b318f2"
+        name = "Party Port"
+      }
+      "42" = {
+        port_profile_id = "669c1ef8329aae15c4b3f791"
+      }
+#       "44" = {
+#         native_network_id = ""
+#       }
+      "45" ={
+        native_network_id = "669c0336329aae15c4b318f2"
+      }
+      "46" = {
+        disabled = true
       }
     }
 }
