@@ -15,6 +15,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/schema/validator"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/hashicorp/terraform-plugin-log/tflog"
+	"github.com/jamestoyer/terraform-provider-unifi/internal/provider/utils"
 	"strconv"
 )
 
@@ -36,25 +37,28 @@ type DeviceSwitchDataSourceModel struct {
 	Site types.String `tfsdk:"site"`
 
 	// Read Only
-	ID                     types.String                                       `tfsdk:"id"`
-	Adopted                types.Bool                                         `tfsdk:"adopted"`
-	ConfigNetwork          *DeviceSwitchConfigNetworkDataSourceModel          `tfsdk:"config_network"`
-	Disabled               types.Bool                                         `tfsdk:"disabled"`
-	Dot1XFallbackNetworkID types.String                                       `tfsdk:"dot1x_fallback_networkconf_id"`
-	Dot1XPortctrlEnabled   types.Bool                                         `tfsdk:"dot1x_portctrl_enabled"`
-	FlowctrlEnabled        types.Bool                                         `tfsdk:"flowctrl_enabled"`
-	IP                     types.String                                       `tfsdk:"ip"`
-	JumboframeEnabled      types.Bool                                         `tfsdk:"jumboframe_enabled"`
-	MgmtNetworkID          types.String                                       `tfsdk:"mgmt_network_id"`
-	Model                  types.String                                       `tfsdk:"model"`
-	Name                   types.String                                       `tfsdk:"name"`
-	PortOverrides          map[string]DeviceSwitchPortOverrideDataSourceModel `tfsdk:"port_overrides"`
-	SnmpContact            types.String                                       `tfsdk:"snmp_contact"`
-	SnmpLocation           types.String                                       `tfsdk:"snmp_location"`
-	State                  types.String                                       `tfsdk:"state"`
-	StpPriority            types.String                                       `tfsdk:"stp_priority"`
-	StpVersion             types.String                                       `tfsdk:"stp_version"`
-	Type                   types.String                                       `tfsdk:"type"`
+	ID                         types.String                                       `tfsdk:"id"`
+	Adopted                    types.Bool                                         `tfsdk:"adopted"`
+	ConfigNetwork              *DeviceSwitchConfigNetworkDataSourceModel          `tfsdk:"config_network"`
+	Disabled                   types.Bool                                         `tfsdk:"disabled"`
+	Dot1XFallbackNetworkID     types.String                                       `tfsdk:"dot1x_fallback_networkconf_id"`
+	Dot1XPortctrlEnabled       types.Bool                                         `tfsdk:"dot1x_portctrl_enabled"`
+	FlowctrlEnabled            types.Bool                                         `tfsdk:"flowctrl_enabled"`
+	IP                         types.String                                       `tfsdk:"ip"`
+	JumboframeEnabled          types.Bool                                         `tfsdk:"jumboframe_enabled"`
+	LEDOverride                types.String                                       `tfsdk:"led_override"`
+	LEDOverrideColor           types.String                                       `tfsdk:"led_override_color"`
+	LEDOverrideColorBrightness types.Int32                                        `tfsdk:"led_override_color_brightness"`
+	MgmtNetworkID              types.String                                       `tfsdk:"mgmt_network_id"`
+	Model                      types.String                                       `tfsdk:"model"`
+	Name                       types.String                                       `tfsdk:"name"`
+	PortOverrides              map[string]DeviceSwitchPortOverrideDataSourceModel `tfsdk:"port_overrides"`
+	SnmpContact                types.String                                       `tfsdk:"snmp_contact"`
+	SnmpLocation               types.String                                       `tfsdk:"snmp_location"`
+	State                      types.String                                       `tfsdk:"state"`
+	StpPriority                types.String                                       `tfsdk:"stp_priority"`
+	StpVersion                 types.String                                       `tfsdk:"stp_version"`
+	Type                       types.String                                       `tfsdk:"type"`
 }
 
 type DeviceSwitchConfigNetworkDataSourceModel struct {
@@ -213,6 +217,15 @@ func (d *DeviceSwitchDataSource) Schema(ctx context.Context, req datasource.Sche
 				Computed:            true,
 			},
 			"jumboframe_enabled": schema.BoolAttribute{
+				Computed: true,
+			},
+			"led_override": schema.StringAttribute{
+				Computed: true,
+			},
+			"led_override_color": schema.StringAttribute{
+				Computed: true,
+			},
+			"led_override_color_brightness": schema.Int32Attribute{
 				Computed: true,
 			},
 			"mgmt_network_id": schema.StringAttribute{
@@ -507,6 +520,9 @@ func (d *DeviceSwitchDataSource) Read(ctx context.Context, req datasource.ReadRe
 	data.FlowctrlEnabled = types.BoolPointerValue(device.FlowctrlEnabled)
 	data.IP = types.StringPointerValue(device.IP)
 	data.JumboframeEnabled = types.BoolPointerValue(device.JumboframeEnabled)
+	data.LEDOverrideColorBrightness = types.Int32PointerValue(utils.Int32PtrValue(device.LedOverrideColorBrightness))
+	data.LEDOverride = types.StringPointerValue(device.LedOverride)
+	data.LEDOverrideColor = types.StringPointerValue(device.LedOverrideColor)
 	data.MgmtNetworkID = types.StringPointerValue(device.MgmtNetworkID)
 	data.Model = types.StringPointerValue(device.Model)
 	data.Name = types.StringPointerValue(device.Name)
@@ -573,18 +589,18 @@ func (d *DeviceSwitchDataSource) Read(ctx context.Context, req datasource.ReadRe
 				for _, policy := range *override.QOSProfile.QOSPolicies {
 					qosProfile.QOSPolicies = append(qosProfile.QOSPolicies, DeviceSwitchPortOverrideQOSPolicyDataSourceModel{
 						QOSMarking: DeviceSwitchPortOverrideQOSMarkingDataSourceModel{
-							CosCode:          types.Int32PointerValue(int32PtrValue(policy.QOSMarking.CosCode)),
-							DscpCode:         types.Int32PointerValue(int32PtrValue(policy.QOSMarking.DscpCode)),
-							IPPrecedenceCode: types.Int32PointerValue(int32PtrValue(policy.QOSMarking.IPPrecedenceCode)),
-							Queue:            types.Int32PointerValue(int32PtrValue(policy.QOSMarking.Queue)),
+							CosCode:          types.Int32PointerValue(utils.Int32PtrValue(policy.QOSMarking.CosCode)),
+							DscpCode:         types.Int32PointerValue(utils.Int32PtrValue(policy.QOSMarking.DscpCode)),
+							IPPrecedenceCode: types.Int32PointerValue(utils.Int32PtrValue(policy.QOSMarking.IPPrecedenceCode)),
+							Queue:            types.Int32PointerValue(utils.Int32PtrValue(policy.QOSMarking.Queue)),
 						},
 						QOSMatching: DeviceSwitchPortOverrideQOSMatchingDataSourceModel{
-							CosCode:          types.Int32PointerValue(int32PtrValue(policy.QOSMatching.CosCode)),
-							DscpCode:         types.Int32PointerValue(int32PtrValue(policy.QOSMatching.DscpCode)),
-							DstPort:          types.Int32PointerValue(int32PtrValue(policy.QOSMatching.DstPort)),
-							IPPrecedenceCode: types.Int32PointerValue(int32PtrValue(policy.QOSMatching.IPPrecedenceCode)),
+							CosCode:          types.Int32PointerValue(utils.Int32PtrValue(policy.QOSMatching.CosCode)),
+							DscpCode:         types.Int32PointerValue(utils.Int32PtrValue(policy.QOSMatching.DscpCode)),
+							DstPort:          types.Int32PointerValue(utils.Int32PtrValue(policy.QOSMatching.DstPort)),
+							IPPrecedenceCode: types.Int32PointerValue(utils.Int32PtrValue(policy.QOSMatching.IPPrecedenceCode)),
 							Protocol:         types.StringPointerValue(policy.QOSMatching.Protocol),
-							SrcPort:          types.Int32PointerValue(int32PtrValue(policy.QOSMatching.SrcPort)),
+							SrcPort:          types.Int32PointerValue(utils.Int32PtrValue(policy.QOSMatching.SrcPort)),
 						},
 					})
 				}
@@ -593,11 +609,11 @@ func (d *DeviceSwitchDataSource) Read(ctx context.Context, req datasource.ReadRe
 
 		// TODO: (jtoyer) In the client make port index value not a pointer as it must always be set
 		data.PortOverrides[strconv.Itoa(*override.PortIDX)] = DeviceSwitchPortOverrideDataSourceModel{
-			AggregateNumPorts:            types.Int32PointerValue(int32PtrValue(override.AggregateNumPorts)),
+			AggregateNumPorts:            types.Int32PointerValue(utils.Int32PtrValue(override.AggregateNumPorts)),
 			AutoNegotiate:                types.BoolPointerValue(override.Autoneg),
 			Dot1XCtrl:                    types.StringPointerValue(override.Dot1XCtrl),
-			Dot1XIDleTimeout:             types.Int32PointerValue(int32PtrValue(override.Dot1XIDleTimeout)),
-			EgressRateLimitKbps:          types.Int32PointerValue(int32PtrValue(override.EgressRateLimitKbps)),
+			Dot1XIDleTimeout:             types.Int32PointerValue(utils.Int32PtrValue(override.Dot1XIDleTimeout)),
+			EgressRateLimitKbps:          types.Int32PointerValue(utils.Int32PtrValue(override.EgressRateLimitKbps)),
 			EgressRateLimitKbpsEnabled:   types.BoolPointerValue(override.EgressRateLimitKbpsEnabled),
 			ExcludedNetworkIDs:           excludedNetworkIDs,
 			FECMode:                      types.StringPointerValue(override.FecMode),
@@ -606,7 +622,7 @@ func (d *DeviceSwitchDataSource) Read(ctx context.Context, req datasource.ReadRe
 			Isolation:                    types.BoolPointerValue(override.Isolation),
 			LLPMEDEnabled:                types.BoolPointerValue(override.LldpmedEnabled),
 			LLPMEDNotifyEnabled:          types.BoolPointerValue(override.LldpmedNotifyEnabled),
-			MirrorPortIDX:                types.Int32PointerValue(int32PtrValue(override.MirrorPortIDX)),
+			MirrorPortIDX:                types.Int32PointerValue(utils.Int32PtrValue(override.MirrorPortIDX)),
 			Name:                         types.StringPointerValue(override.Name),
 			NativeNetworkID:              types.StringPointerValue(override.NATiveNetworkID),
 			Operation:                    types.StringPointerValue(override.OpMode),
@@ -615,23 +631,23 @@ func (d *DeviceSwitchDataSource) Read(ctx context.Context, req datasource.ReadRe
 			PortProfileID:                types.StringPointerValue(override.PortProfileID),
 			PortSecurityEnabled:          types.BoolPointerValue(override.PortSecurityEnabled),
 			PortSecurityMACAddresses:     portSecurityMACAddresses,
-			PriorityQueue1Level:          types.Int32PointerValue(int32PtrValue(override.PriorityQueue1Level)),
-			PriorityQueue2Level:          types.Int32PointerValue(int32PtrValue(override.PriorityQueue2Level)),
-			PriorityQueue3Level:          types.Int32PointerValue(int32PtrValue(override.PriorityQueue3Level)),
-			PriorityQueue4Level:          types.Int32PointerValue(int32PtrValue(override.PriorityQueue4Level)),
+			PriorityQueue1Level:          types.Int32PointerValue(utils.Int32PtrValue(override.PriorityQueue1Level)),
+			PriorityQueue2Level:          types.Int32PointerValue(utils.Int32PtrValue(override.PriorityQueue2Level)),
+			PriorityQueue3Level:          types.Int32PointerValue(utils.Int32PtrValue(override.PriorityQueue3Level)),
+			PriorityQueue4Level:          types.Int32PointerValue(utils.Int32PtrValue(override.PriorityQueue4Level)),
 			QOSProfile:                   qosProfile,
 			SettingPreference:            types.StringPointerValue(override.SettingPreference),
-			Speed:                        types.Int32PointerValue(int32PtrValue(override.Speed)),
+			Speed:                        types.Int32PointerValue(utils.Int32PtrValue(override.Speed)),
 			StormControlBroadcastEnabled: types.BoolPointerValue(override.StormctrlBroadcastastEnabled),
-			StormControlBroadcastLevel:   types.Int32PointerValue(int32PtrValue(override.StormctrlBroadcastastLevel)),
-			StormControlBroadcastRate:    types.Int32PointerValue(int32PtrValue(override.StormctrlBroadcastastRate)),
+			StormControlBroadcastLevel:   types.Int32PointerValue(utils.Int32PtrValue(override.StormctrlBroadcastastLevel)),
+			StormControlBroadcastRate:    types.Int32PointerValue(utils.Int32PtrValue(override.StormctrlBroadcastastRate)),
 			StormControlMulticastEnabled: types.BoolPointerValue(override.StormctrlMcastEnabled),
-			StormControlMulticastLevel:   types.Int32PointerValue(int32PtrValue(override.StormctrlUcastLevel)),
-			StormControlMulticastRate:    types.Int32PointerValue(int32PtrValue(override.StormctrlUcastRate)),
+			StormControlMulticastLevel:   types.Int32PointerValue(utils.Int32PtrValue(override.StormctrlUcastLevel)),
+			StormControlMulticastRate:    types.Int32PointerValue(utils.Int32PtrValue(override.StormctrlUcastRate)),
 			StormControlType:             types.StringPointerValue(override.StormctrlType),
 			StormControlUnicastEnabled:   types.BoolPointerValue(override.StormctrlUcastEnabled),
-			StormControlUnicastLevel:     types.Int32PointerValue(int32PtrValue(override.StormctrlUcastLevel)),
-			StormControlUnicastRate:      types.Int32PointerValue(int32PtrValue(override.StormctrlUcastRate)),
+			StormControlUnicastLevel:     types.Int32PointerValue(utils.Int32PtrValue(override.StormctrlUcastLevel)),
+			StormControlUnicastRate:      types.Int32PointerValue(utils.Int32PtrValue(override.StormctrlUcastRate)),
 			STPPortMode:                  types.BoolPointerValue(override.StpPortMode),
 			TaggedVLANMgmt:               types.StringPointerValue(override.TaggedVLANMgmt),
 			VoiceNetworkID:               types.StringPointerValue(override.VoiceNetworkID),
@@ -642,22 +658,4 @@ func (d *DeviceSwitchDataSource) Read(ctx context.Context, req datasource.ReadRe
 
 	// Save data into Terraform state
 	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
-}
-
-func int32PtrValue(val *int) *int32 {
-	if val == nil {
-		return nil
-	}
-
-	i := int32(*val)
-	return &i
-}
-
-func intPtrValue(val *int32) *int {
-	if val == nil {
-		return nil
-	}
-
-	i := int(*val)
-	return &i
 }

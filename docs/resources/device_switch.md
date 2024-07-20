@@ -24,6 +24,7 @@ A Unifi switch device.
 ### Optional
 
 - `disabled` (Boolean)
+- `led_override` (Attributes) Overrides for the switch LEDs. (see [below for nested schema](#nestedatt--led_override))
 - `port_overrides` (Attributes Map) (see [below for nested schema](#nestedatt--port_overrides))
 - `site` (String) The site the switch belongs to. Setting this overrides the default site set in the provider
 - `snmp_contact` (String)
@@ -35,6 +36,16 @@ A Unifi switch device.
 - `id` (String) The Unifi switch device identifier
 - `model` (String)
 - `site_id` (String) The Unifi internal ID of the site.
+
+<a id="nestedatt--led_override"></a>
+### Nested Schema for `led_override`
+
+Optional:
+
+- `brightness` (Number)
+- `color` (String)
+- `enabled` (Boolean)
+
 
 <a id="nestedatt--port_overrides"></a>
 ### Nested Schema for `port_overrides`

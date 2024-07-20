@@ -23,18 +23,18 @@ import {
 }
 
 resource "unifi_device_switch" "example" {
-  name = "Example Switch"
+  name = "Example Switch Updates"
   mac  = data.unifi_device_switch.example.mac
 
   management_network_id = "66994c4598129b0ccf324323"
 
   static_ip_settings = {
     ip            = "10.2.3.4"
-    gateway       = "10.2.sdfds0.1"
+    gateway       = "10.2.0.1"
     netmask       = "255.255.255.0"
     preferred_dns = "1.2.3.4"
   }
-
+  
   #   port_overrides = {
   #     "39" = {
   #       full_duplex = true

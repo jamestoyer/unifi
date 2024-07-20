@@ -12,6 +12,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/schema/validator"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/hashicorp/terraform-plugin-log/tflog"
+	"github.com/jamestoyer/terraform-provider-unifi/internal/provider/utils"
 	"strconv"
 )
 
@@ -217,7 +218,7 @@ func (d *DeviceDataSource) Read(ctx context.Context, req datasource.ReadRequest,
 		}
 
 		data.PortOverrides[strconv.Itoa(*override.PortIDX)] = DevicePortOverrideDataSourceModel{
-			AggregateNumPorts:        types.Int32PointerValue(int32PtrValue(override.AggregateNumPorts)),
+			AggregateNumPorts:        types.Int32PointerValue(utils.Int32PtrValue(override.AggregateNumPorts)),
 			ExcludedNetworkIDs:       excludedNetworkIDs,
 			Name:                     types.StringPointerValue(override.Name),
 			NativeNetworkID:          types.StringPointerValue(override.NATiveNetworkID),

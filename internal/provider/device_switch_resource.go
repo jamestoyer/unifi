@@ -30,6 +30,10 @@ import (
 const (
 	configNetworkTypeDHCP   = "dhcp"
 	configNetworkTypeStatic = "static"
+
+	ledOverrideDefault = "default"
+	ledOverrideOff     = "off"
+	ledOverrideOn      = "on"
 )
 
 var (
@@ -37,9 +41,10 @@ var (
 	_ resource.Resource                = &DeviceSwitchResource{}
 	_ resource.ResourceWithImportState = &DeviceSwitchResource{}
 
-	defaultDeviceSwitchResourceModel              = DeviceSwitchResourceModel{}
-	defaultDeviceSwitchConfigNetworkResourceModel = DeviceSwitchStaticIPSettingResourceModel{}
-	defaultDeviceSwitchPortOverrideModel          = DeviceSwitchPortOverrideResourceModel{}
+	defaultDeviceSwitchLEDOverrideResourceModel      = DeviceSwitchLEDOverrideResourceModel{}
+	defaultDeviceSwitchPortOverrideModel             = DeviceSwitchPortOverrideResourceModel{}
+	defaultDeviceSwitchResourceModel                 = DeviceSwitchResourceModel{}
+	defaultDeviceSwitchStaticIPSettingsResourceModel = DeviceSwitchStaticIPSettingResourceModel{}
 )
 
 func NewDeviceSwitchResource() resource.Resource {
@@ -210,6 +215,7 @@ type DeviceSwitchResourceModel struct {
 
 	// Configurable Values
 	Disabled            types.Bool                                       `tfsdk:"disabled"`
+	LEDOverride         *DeviceSwitchLEDOverrideResourceModel            `tfsdk:"led_override"`
 	Mac                 types.String                                     `tfsdk:"mac"`
 	ManagementNetworkID types.String                                     `tfsdk:"management_network_id"`
 	Name                types.String                                     `tfsdk:"name"`
@@ -280,6 +286,7 @@ func (m *DeviceSwitchResourceModel) schema() schema.Schema {
 			// "jumboframe_enabled": schema.BoolAttribute{
 			// 	Computed: true,
 			// },
+			"led_override": defaultDeviceSwitchLEDOverrideResourceModel.schema(),
 			"mac": schema.StringAttribute{
 				MarkdownDescription: "The MAC address of the device",
 				Required:            true,
@@ -351,7 +358,7 @@ func (m *DeviceSwitchResourceModel) schema() schema.Schema {
 			// "stp_version": schema.StringAttribute{
 			// 	Computed: true,
 			// },
-			"static_ip_settings": defaultDeviceSwitchConfigNetworkResourceModel.schema(),
+			"static_ip_settings": defaultDeviceSwitchStaticIPSettingsResourceModel.schema(),
 		},
 	}
 }
@@ -374,16 +381,25 @@ func (m *DeviceSwitchResourceModel) toUnifiDevice() (*unifi.Device, diag.Diagnos
 		diags.AddAttributeError(path.Root("management_network_id"), "Invalid ID", "The ID of the management network must not be empty")
 	}
 
-	return &unifi.Device{
+	device := &unifi.Device{
 		ConfigNetwork: m.StaticIPSettings.toUnifiStruct(),
 		Disabled:      m.Disabled.ValueBoolPointer(),
+		LedOverride:   m.LEDOverride.GetOverrideState().ValueStringPointer(),
 		MAC:           m.Mac.ValueStringPointer(),
 		MgmtNetworkID: m.ManagementNetworkID.ValueStringPointer(),
 		Name:          m.Name.ValueStringPointer(),
-		PortOverrides: portOverrides,
+		// PortOverrides: portOverrides,
+		PortOverrides: []unifi.DevicePortOverrides{},
 		SnmpContact:   m.SNMPContact.ValueStringPointer(),
 		SnmpLocation:  m.SNMPLocation.ValueStringPointer(),
-	}, diags
+	}
+
+	if m.LEDOverride != nil {
+		device.LedOverrideColor = m.LEDOverride.Color.ValueStringPointer()
+		device.LedOverrideColorBrightness = utils.IntPtrValue(m.LEDOverride.Brightness.ValueInt32Pointer())
+	}
+
+	return device, diags
 }
 
 func newDeviceSwitchResourceModel(device *unifi.Device, site string, model DeviceSwitchResourceModel) DeviceSwitchResourceModel {
@@ -394,6 +410,7 @@ func newDeviceSwitchResourceModel(device *unifi.Device, site string, model Devic
 
 	// Configurable Values
 	model.Disabled = types.BoolPointerValue(device.Disabled)
+	model.LEDOverride = newDeviceSwitchLEDOverrideResourceModel(device, model.LEDOverride)
 	model.Mac = types.StringPointerValue(device.MAC)
 	model.ManagementNetworkID = types.StringPointerValue(device.MgmtNetworkID)
 	model.Name = types.StringPointerValue(device.Name)
@@ -500,6 +517,66 @@ func newDeviceSwitchStaticIPSettingsResourceModel(network *unifi.DeviceConfigNet
 	model.IP = iptypes.NewIPv4AddressPointerValue(network.IP)
 	model.Netmask = iptypes.NewIPv4AddressPointerValue(network.Netmask)
 	model.PreferredDNS = iptypes.NewIPv4AddressPointerValue(network.DNS1)
+
+	return model
+}
+
+type DeviceSwitchLEDOverrideResourceModel struct {
+	Brightness types.Int32  `tfsdk:"brightness"`
+	Color      types.String `tfsdk:"color"`
+	Enabled    types.Bool   `tfsdk:"enabled"`
+}
+
+func (m *DeviceSwitchLEDOverrideResourceModel) schema() schema.Attribute {
+	return schema.SingleNestedAttribute{
+		MarkdownDescription: "Overrides for the switch LEDs.",
+		Optional:            true,
+		Attributes: map[string]schema.Attribute{
+			"brightness": schema.Int32Attribute{
+				Optional: true,
+				Validators: []validator.Int32{
+					int32validator.Between(0, 100),
+				},
+			},
+			"color": schema.StringAttribute{
+				Optional: true,
+				Validators: []validator.String{
+					stringvalidator.RegexMatches(regexp.MustCompile(`^#(?:[0-9a-fA-F]{3}){1,2}$`), "invalid color code"),
+				},
+			},
+			"enabled": schema.BoolAttribute{
+				Computed: true,
+				Optional: true,
+				Default:  booldefault.StaticBool(true),
+			},
+		},
+	}
+}
+
+func (m *DeviceSwitchLEDOverrideResourceModel) GetOverrideState() types.String {
+	if m == nil || m.Enabled.ValueBool() {
+		return types.StringValue(ledOverrideOn)
+	}
+
+	return types.StringValue(ledOverrideOff)
+}
+
+func newDeviceSwitchLEDOverrideResourceModel(device *unifi.Device, model *DeviceSwitchLEDOverrideResourceModel) *DeviceSwitchLEDOverrideResourceModel {
+	if *device.LedOverride == ledOverrideDefault {
+		return nil
+	}
+
+	if model == nil {
+		model = &DeviceSwitchLEDOverrideResourceModel{}
+	}
+
+	model.Brightness = types.Int32PointerValue(utils.Int32PtrValue(device.LedOverrideColorBrightness))
+	model.Color = types.StringPointerValue(device.LedOverrideColor)
+	if *device.LedOverride == ledOverrideOn {
+		model.Enabled = types.BoolValue(true)
+	} else {
+		model.Enabled = types.BoolValue(false)
+	}
 
 	return model
 }
@@ -757,7 +834,7 @@ func (m *DeviceSwitchPortOverrideResourceModel) toUnifiStruct(portIndex int) uni
 		OpMode:     m.Operation.ValueStringPointer(),
 		PoeMode:    m.POEMode.ValueStringPointer(),
 		PortIDX:    &portIndex,
-		Speed:      intPtrValue(m.LinkSpeed.ValueInt32Pointer()),
+		Speed:      utils.IntPtrValue(m.LinkSpeed.ValueInt32Pointer()),
 	}
 }
 
@@ -778,7 +855,7 @@ func newDeviceSwitchPortOverrideResourceModel(override unifi.DevicePortOverrides
 
 		// Configurable Values
 		FullDuplex: types.BoolPointerValue(override.FullDuplex),
-		LinkSpeed:  types.Int32PointerValue(int32PtrValue(override.Speed)),
+		LinkSpeed:  types.Int32PointerValue(utils.Int32PtrValue(override.Speed)),
 		Operation:  types.StringPointerValue(override.OpMode),
 		POEMode:    types.StringPointerValue(override.PoeMode),
 	}

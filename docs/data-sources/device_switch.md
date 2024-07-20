@@ -35,6 +35,9 @@ Get information about a Unifi switch device
 - `id` (String) The Unifi device identifier
 - `ip` (String) The currently assigned IP address of the device
 - `jumboframe_enabled` (Boolean)
+- `led_override` (String)
+- `led_override_color` (String)
+- `led_override_color_brightness` (Number)
 - `mgmt_network_id` (String)
 - `model` (String)
 - `name` (String)
