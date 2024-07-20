@@ -14,7 +14,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/booldefault"
-	"github.com/hashicorp/terraform-plugin-framework/resource/schema/int32default"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema/mapdefault"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/objectdefault"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringdefault"
@@ -167,10 +167,13 @@ func (r *DeviceSwitchResource) Update(ctx context.Context, req resource.UpdateRe
 			resp.Diagnostics.AddError("Client Error", fmt.Sprintf("Unable to update switch, got error: %s", err))
 			return
 		}
+
+		resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
+		return
 	}
 
 	// TODO: (jtoyer) Wait until device has finished updating after before saving the state
-
+	data = newDeviceSwitchResourceModel(device, site, data)
 	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
 }
 
@@ -214,10 +217,20 @@ type DeviceSwitchResourceModel struct {
 	Site                types.String                                     `tfsdk:"site"`
 	SNMPContact         types.String                                     `tfsdk:"snmp_contact"`
 	SNMPLocation        types.String                                     `tfsdk:"snmp_location"`
-	STPPriority         types.String                                     `tfsdk:"stp_priority"`
 }
 
 func (m *DeviceSwitchResourceModel) schema(ctx context.Context, req resource.SchemaRequest, resp *resource.SchemaResponse) schema.Schema {
+	// Create a default for port overrides
+	overrideAttributes := types.ObjectType{AttrTypes: map[string]attr.Type{}}
+	for name, attribute := range defaultDeviceSwitchPortOverrideModel.schema().Attributes {
+		overrideAttributes.AttrTypes[name] = attribute.GetType()
+	}
+
+	defaultPortOverrides, diags := types.MapValue(overrideAttributes, map[string]attr.Value{})
+	if diags.HasError() {
+		panic(diags)
+	}
+
 	return schema.Schema{
 		MarkdownDescription: "A Unifi switch device.",
 
@@ -271,6 +284,7 @@ func (m *DeviceSwitchResourceModel) schema(ctx context.Context, req resource.Sch
 				MarkdownDescription: "The MAC address of the device",
 				Required:            true,
 				PlanModifiers: []planmodifier.String{
+					// TODO: (jtoyer) Add a plan modifier to ignore case changes for the MAC
 					stringplanmodifier.RequiresReplace(),
 				},
 				Validators: []validator.String{
@@ -280,7 +294,7 @@ func (m *DeviceSwitchResourceModel) schema(ctx context.Context, req resource.Sch
 			"management_network_id": schema.StringAttribute{
 				MarkdownDescription: "The ID of the VLAN to use as the management VLAN instead of the default tagged " +
 					"network from the upstream device.",
-				Optional: true,
+				Required: true,
 			},
 			"name": schema.StringAttribute{
 				MarkdownDescription: "A name to assign to the device",
@@ -290,7 +304,9 @@ func (m *DeviceSwitchResourceModel) schema(ctx context.Context, req resource.Sch
 				},
 			},
 			"port_overrides": schema.MapNestedAttribute{
+				Computed:     true,
 				Optional:     true,
+				Default:      mapdefault.StaticValue(defaultPortOverrides),
 				NestedObject: defaultDeviceSwitchPortOverrideModel.schema(),
 			},
 			// TODO: (jtoyer) To enable these we need to set an exclusion on unifi.SettingGlobalSwitch
@@ -306,26 +322,31 @@ func (m *DeviceSwitchResourceModel) schema(ctx context.Context, req resource.Sch
 				},
 			},
 			"snmp_contact": schema.StringAttribute{
+				Computed: true,
 				Optional: true,
+				Default:  stringdefault.StaticString(""),
 				Validators: []validator.String{
 					stringvalidator.LengthAtMost(255),
 				},
 			},
 			"snmp_location": schema.StringAttribute{
+				Computed: true,
 				Optional: true,
+				Default:  stringdefault.StaticString(""),
 				Validators: []validator.String{
 					stringvalidator.LengthAtMost(255),
 				},
 			},
-			"stp_priority": schema.StringAttribute{
-				Computed: true,
-				Optional: true,
-				Validators: []validator.String{
-					stringvalidator.OneOf("0", "4096", "8192", "12288", "16384", "20480", "24576", "28672",
-						"32768", "36864", "40960", "45056", "49152", "53248", "57344", "61440"),
-				},
-				Default: stringdefault.StaticString("0"),
-			},
+			// TODO: (jtoyer) To enable these we need to set an exclusion on unifi.SettingGlobalSwitch
+			// "stp_priority": schema.StringAttribute{
+			// 	Computed: true,
+			// 	Optional: true,
+			// 	Validators: []validator.String{
+			// 		stringvalidator.OneOf("0", "4096", "8192", "12288", "16384", "20480", "24576", "28672",
+			// 			"32768", "36864", "40960", "45056", "49152", "53248", "57344", "61440"),
+			// 	},
+			// 	Default: stringdefault.StaticString("0"),
+			// },
 			// TODO: (jtoyer) To enable these we need to set an exclusion on unifi.SettingGlobalSwitch
 			// "stp_version": schema.StringAttribute{
 			// 	Computed: true,
@@ -348,17 +369,19 @@ func (m *DeviceSwitchResourceModel) toUnifiDevice() (*unifi.Device, diag.Diagnos
 		portOverrides = append(portOverrides, override.toUnifiStruct(i))
 	}
 
+	if m.ManagementNetworkID.ValueString() == "" {
+		diags.AddAttributeError(path.Root("management_network_id"), "Invalid ID", fmt.Sprintf("The ID of the management network must not be empty"))
+	}
+
 	return &unifi.Device{
-		ConfigNetwork: m.IPSettings.toUnifiStruct(),
+		// ConfigNetwork: m.IPSettings.toUnifiStruct(),
 		Disabled:      m.Disabled.ValueBoolPointer(),
-		// TODO: (jtoyer) In the client make mac a value not a pointer
 		MAC:           m.Mac.ValueStringPointer(),
 		MgmtNetworkID: m.ManagementNetworkID.ValueStringPointer(),
 		Name:          m.Name.ValueStringPointer(),
 		PortOverrides: portOverrides,
 		SnmpContact:   m.SNMPContact.ValueStringPointer(),
 		SnmpLocation:  m.SNMPLocation.ValueStringPointer(),
-		StpPriority:   m.STPPriority.ValueStringPointer(),
 	}, diags
 }
 
@@ -376,7 +399,6 @@ func newDeviceSwitchResourceModel(device *unifi.Device, site string, model Devic
 	model.Name = types.StringPointerValue(device.Name)
 	model.SNMPContact = types.StringPointerValue(device.SnmpContact)
 	model.SNMPLocation = types.StringPointerValue(device.SnmpLocation)
-	model.STPPriority = types.StringPointerValue(device.StpPriority)
 
 	overrides := make(map[string]DeviceSwitchPortOverrideResourceModel, len(device.PortOverrides))
 	for _, override := range device.PortOverrides {
@@ -412,7 +434,7 @@ func (m *DeviceSwitchConfigNetworkResourceModel) attributeTypes() map[string]att
 	}
 }
 
-func (m *DeviceSwitchConfigNetworkResourceModel) schema(ctx context.Context, req resource.SchemaRequest, resp *resource.SchemaResponse) schema.Attribute {
+func (m *DeviceSwitchConfigNetworkResourceModel) schema(ctx context.Context, _ resource.SchemaRequest, resp *resource.SchemaResponse) schema.Attribute {
 	defaultValues, diags := types.ObjectValueFrom(ctx,
 		defaultDeviceSwitchConfigNetworkResourceModel.attributeTypes(),
 		defaultDeviceSwitchConfigNetworkResourceModel,
@@ -433,9 +455,7 @@ func (m *DeviceSwitchConfigNetworkResourceModel) schema(ctx context.Context, req
 				},
 			},
 			"bonding_enabled": schema.BoolAttribute{
-				Computed: true,
 				Optional: true,
-				Default:  booldefault.StaticBool(false),
 			},
 			"dns_suffix": schema.StringAttribute{
 				Optional: true,
@@ -519,14 +539,14 @@ func newDeviceSwitchConfigNetworkResourceModel(network *unifi.DeviceConfigNetwor
 		return model
 	}
 
-	model.AlternativeDNS = iptypes.NewIPv4AddressPointerValue(network.DNS2)
-	model.BondingEnabled = types.BoolPointerValue(network.BondingEnabled)
-	model.DNSSuffix = types.StringPointerValue(network.DNSsuffix)
-	model.Gateway = iptypes.NewIPv4AddressPointerValue(network.Gateway)
-	model.IP = iptypes.NewIPv4AddressPointerValue(network.IP)
-	model.Netmask = iptypes.NewIPv4AddressPointerValue(network.Netmask)
-	model.PreferredDNS = iptypes.NewIPv4AddressPointerValue(network.DNS1)
-	model.Type = types.StringPointerValue(network.Type)
+	// model.AlternativeDNS = iptypes.NewIPv4AddressPointerValue(network.DNS2)
+	// model.BondingEnabled = types.BoolPointerValue(network.BondingEnabled)
+	// model.DNSSuffix = types.StringPointerValue(network.DNSsuffix)
+	// model.Gateway = iptypes.NewIPv4AddressPointerValue(network.Gateway)
+	// model.IP = iptypes.NewIPv4AddressPointerValue(network.IP)
+	// model.Netmask = iptypes.NewIPv4AddressPointerValue(network.Netmask)
+	// model.PreferredDNS = iptypes.NewIPv4AddressPointerValue(network.DNS1)
+	// model.Type = types.StringPointerValue(network.Type)
 
 	return model
 }
@@ -589,9 +609,7 @@ func (m *DeviceSwitchPortOverrideResourceModel) schema() schema.NestedAttributeO
 			// 	Computed: true,
 			// },
 			"full_duplex": schema.BoolAttribute{
-				Computed: true,
 				Optional: true,
-				Default:  booldefault.StaticBool(false),
 				Validators: []validator.Bool{
 					boolvalidator.AlsoRequires(path.MatchRelative().AtParent().AtName("link_speed")),
 				},
@@ -604,9 +622,7 @@ func (m *DeviceSwitchPortOverrideResourceModel) schema() schema.NestedAttributeO
 			"link_speed": schema.Int32Attribute{
 				MarkdownDescription: "An override for the link speed of the port. Setting this to `0` indicates that" +
 					" this is auto negotiated",
-				Computed: true,
 				Optional: true,
-				Default:  int32default.StaticInt32(0),
 				Validators: []validator.Int32{
 					int32validator.OneOf(0, 10, 100, 1000, 2500, 5000, 10000, 20000, 25000, 40000, 50000, 100000),
 					int32validator.AlsoRequires(path.MatchRelative().AtParent().AtName("full_duplex")),
