@@ -24,7 +24,6 @@ import (
 	"github.com/hashicorp/terraform-plugin-log/tflog"
 	"github.com/jamestoyer/go-unifi/unifi"
 	"github.com/jamestoyer/terraform-provider-unifi/internal/provider/customvalidator"
-	"github.com/jamestoyer/terraform-provider-unifi/internal/provider/utils"
 	"regexp"
 	"strconv"
 )
@@ -157,7 +156,7 @@ func (r *DeviceSwitchResource) Update(ctx context.Context, req resource.UpdateRe
 		return
 	}
 
-	device.ID = data.ID.ValueString()
+	device.ID = data.ID.ValueStringPointer()
 
 	device, err := r.client.UpdateDevice(ctx, site, device)
 	if err != nil {
@@ -351,37 +350,37 @@ func (m *DeviceSwitchResourceModel) toUnifiDevice() (*unifi.Device, diag.Diagnos
 
 	return &unifi.Device{
 		ConfigNetwork: m.IPSettings.toUnifiStruct(),
-		Disabled:      m.Disabled.ValueBool(),
-		MAC:           m.Mac.String(),
-		MgmtNetworkID: m.ManagementNetworkID.ValueString(),
-		Name:          m.Name.ValueString(),
-		// TODO: (jtoyer) Populate with real values once we're there
+		Disabled:      m.Disabled.ValueBoolPointer(),
+		// TODO: (jtoyer) In the client make mac a value not a pointer
+		MAC:           m.Mac.ValueStringPointer(),
+		MgmtNetworkID: m.ManagementNetworkID.ValueStringPointer(),
+		Name:          m.Name.ValueStringPointer(),
 		PortOverrides: portOverrides,
-		SnmpContact:   m.SNMPContact.ValueString(),
-		SnmpLocation:  m.SNMPLocation.ValueString(),
-		StpPriority:   m.STPPriority.ValueString(),
+		SnmpContact:   m.SNMPContact.ValueStringPointer(),
+		SnmpLocation:  m.SNMPLocation.ValueStringPointer(),
+		StpPriority:   m.STPPriority.ValueStringPointer(),
 	}, diags
 }
 
 func newDeviceSwitchResourceModel(device *unifi.Device, site string, model DeviceSwitchResourceModel) DeviceSwitchResourceModel {
 	// Computed values
-	model.Model = types.StringValue(device.Model)
+	model.Model = types.StringPointerValue(device.Model)
 	model.Site = types.StringValue(site)
-	model.SiteID = types.StringValue(device.SiteID)
+	model.SiteID = types.StringPointerValue(device.SiteID)
 
 	// Configurable Values
-	model.Disabled = types.BoolValue(device.Disabled)
+	model.Disabled = types.BoolPointerValue(device.Disabled)
 	model.IPSettings = newDeviceSwitchConfigNetworkResourceModel(device.ConfigNetwork, model.IPSettings)
-	model.Mac = types.StringValue(device.MAC)
-	model.ManagementNetworkID = utils.StringValue(device.MgmtNetworkID)
-	model.Name = types.StringValue(device.Name)
-	model.SNMPContact = utils.StringValue(device.SnmpContact)
-	model.SNMPLocation = utils.StringValue(device.SnmpLocation)
-	model.STPPriority = types.StringValue(device.StpPriority)
+	model.Mac = types.StringPointerValue(device.MAC)
+	model.ManagementNetworkID = types.StringPointerValue(device.MgmtNetworkID)
+	model.Name = types.StringPointerValue(device.Name)
+	model.SNMPContact = types.StringPointerValue(device.SnmpContact)
+	model.SNMPLocation = types.StringPointerValue(device.SnmpLocation)
+	model.STPPriority = types.StringPointerValue(device.StpPriority)
 
 	overrides := make(map[string]DeviceSwitchPortOverrideResourceModel, len(device.PortOverrides))
 	for _, override := range device.PortOverrides {
-		index := strconv.Itoa(override.PortIDX)
+		index := strconv.Itoa(*override.PortIDX)
 		overrides[index] = newDeviceSwitchPortOverrideResourceModel(override)
 	}
 
@@ -493,33 +492,41 @@ func (m *DeviceSwitchConfigNetworkResourceModel) schema(ctx context.Context, req
 	}
 }
 
-func (m *DeviceSwitchConfigNetworkResourceModel) toUnifiStruct() unifi.DeviceConfigNetwork {
-	return unifi.DeviceConfigNetwork{
-		DNS2:           m.AlternativeDNS.ValueString(),
-		BondingEnabled: m.BondingEnabled.ValueBool(),
+func (m *DeviceSwitchConfigNetworkResourceModel) toUnifiStruct() *unifi.DeviceConfigNetwork {
+	if m == nil {
+		return nil
+	}
+
+	return &unifi.DeviceConfigNetwork{
+		DNS2:           m.AlternativeDNS.ValueStringPointer(),
+		BondingEnabled: m.BondingEnabled.ValueBoolPointer(),
 		// TODO: (jtoyer) fix DNS Suffix field name in the unifi client
-		DNSsuffix: m.DNSSuffix.ValueString(),
-		Gateway:   m.Gateway.ValueString(),
-		IP:        m.IP.ValueString(),
-		Netmask:   m.Netmask.ValueString(),
-		DNS1:      m.PreferredDNS.ValueString(),
-		Type:      m.Type.ValueString(),
+		DNSsuffix: m.DNSSuffix.ValueStringPointer(),
+		Gateway:   m.Gateway.ValueStringPointer(),
+		IP:        m.IP.ValueStringPointer(),
+		Netmask:   m.Netmask.ValueStringPointer(),
+		DNS1:      m.PreferredDNS.ValueStringPointer(),
+		Type:      m.Type.ValueStringPointer(),
 	}
 }
 
-func newDeviceSwitchConfigNetworkResourceModel(network unifi.DeviceConfigNetwork, model *DeviceSwitchConfigNetworkResourceModel) *DeviceSwitchConfigNetworkResourceModel {
+func newDeviceSwitchConfigNetworkResourceModel(network *unifi.DeviceConfigNetwork, model *DeviceSwitchConfigNetworkResourceModel) *DeviceSwitchConfigNetworkResourceModel {
 	if model == nil {
 		model = &DeviceSwitchConfigNetworkResourceModel{Type: types.StringValue("dhcp")}
 	}
 
-	model.AlternativeDNS = utils.IPv4AddressValue(network.DNS2)
-	model.BondingEnabled = types.BoolValue(network.BondingEnabled)
-	model.DNSSuffix = utils.StringValue(network.DNSsuffix)
-	model.Gateway = utils.IPv4AddressValue(network.Gateway)
-	model.IP = utils.IPv4AddressValue(network.IP)
-	model.Netmask = utils.IPv4AddressValue(network.Netmask)
-	model.PreferredDNS = utils.IPv4AddressValue(network.DNS1)
-	model.Type = utils.StringValue(network.Type)
+	if network == nil {
+		return model
+	}
+
+	model.AlternativeDNS = iptypes.NewIPv4AddressPointerValue(network.DNS2)
+	model.BondingEnabled = types.BoolPointerValue(network.BondingEnabled)
+	model.DNSSuffix = types.StringPointerValue(network.DNSsuffix)
+	model.Gateway = iptypes.NewIPv4AddressPointerValue(network.Gateway)
+	model.IP = iptypes.NewIPv4AddressPointerValue(network.IP)
+	model.Netmask = iptypes.NewIPv4AddressPointerValue(network.Netmask)
+	model.PreferredDNS = iptypes.NewIPv4AddressPointerValue(network.DNS1)
+	model.Type = types.StringPointerValue(network.Type)
 
 	return model
 }
@@ -774,23 +781,23 @@ func (m *DeviceSwitchPortOverrideResourceModel) schema() schema.NestedAttributeO
 func (m *DeviceSwitchPortOverrideResourceModel) toUnifiStruct(portIndex int) unifi.DevicePortOverrides {
 	return unifi.DevicePortOverrides{
 		// ComputedValues
-		SettingPreference: m.AdvancedSettingsMode.ValueString(),
+		SettingPreference: m.AdvancedSettingsMode.ValueStringPointer(),
 
 		// Configurable Values
-		FullDuplex: m.FullDuplex.ValueBool(),
-		OpMode:     m.Operation.ValueString(),
-		PoeMode:    m.POEMode.ValueString(),
-		PortIDX:    portIndex,
-		Speed:      int(m.LinkSpeed.ValueInt32()),
+		FullDuplex: m.FullDuplex.ValueBoolPointer(),
+		OpMode:     m.Operation.ValueStringPointer(),
+		PoeMode:    m.POEMode.ValueStringPointer(),
+		PortIDX:    &portIndex,
+		Speed:      intPtrValue(m.LinkSpeed.ValueInt32Pointer()),
 	}
 }
 
 func newDeviceSwitchPortOverrideResourceModel(override unifi.DevicePortOverrides) DeviceSwitchPortOverrideResourceModel {
 	var advancedSettingsMode string
 	switch {
-	case override.SettingPreference != "":
-		advancedSettingsMode = override.SettingPreference
-	case override.Speed > 0:
+	case override.SettingPreference != nil && *override.SettingPreference != "":
+		advancedSettingsMode = *override.SettingPreference
+	case override.Speed != nil && *override.Speed > 0:
 		advancedSettingsMode = "manual"
 	default:
 		advancedSettingsMode = "auto"
@@ -801,10 +808,10 @@ func newDeviceSwitchPortOverrideResourceModel(override unifi.DevicePortOverrides
 		AdvancedSettingsMode: types.StringValue(advancedSettingsMode),
 
 		// Configurable Values
-		FullDuplex: types.BoolValue(override.FullDuplex),
-		LinkSpeed:  types.Int32Value(int32(override.Speed)),
-		Operation:  types.StringValue(override.OpMode),
-		POEMode:    types.StringValue(override.PoeMode),
+		FullDuplex: types.BoolPointerValue(override.FullDuplex),
+		LinkSpeed:  types.Int32PointerValue(int32PtrValue(override.Speed)),
+		Operation:  types.StringPointerValue(override.OpMode),
+		POEMode:    types.StringPointerValue(override.PoeMode),
 	}
 }
 

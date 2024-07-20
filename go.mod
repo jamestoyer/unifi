@@ -13,7 +13,7 @@ require (
 	github.com/hashicorp/terraform-plugin-log v0.9.0
 	github.com/hashicorp/terraform-plugin-sdk/v2 v2.33.0
 	github.com/hashicorp/terraform-plugin-testing v1.8.0
-	github.com/jamestoyer/go-unifi v0.0.0-20240718181401-ebcfa83a7875
+	github.com/jamestoyer/go-unifi v0.0.0-20240720092047-5e018bec17da
 	github.com/testcontainers/testcontainers-go v0.32.0
 )
 
