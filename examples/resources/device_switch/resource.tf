@@ -36,34 +36,35 @@ resource "unifi_device_switch" "example" {
   }
 
   port_overrides = {
+    "38" = {
+      name              = "Native Network Override"
+      native_network_id = "669c08b2329aae15c4b3d60a"
+    }
     "39" = {
       full_duplex = true
       link_speed  = "1000"
-      name        = "Port 39"
-      #         native_network_id = "669c0336329aae15c4b318f2"
-      operation = "switch"
+      name        = "Link Speed"
+      operation   = "switch"
     }
     "40" = {
-      #         native_network_id = "669c0336329aae15c4b318f2"
       poe_mode = "off"
-      name     = "40"
+      name     = "POE Off"
     }
     "41" = {
-      #         native_network_id = "669c0336329aae15c4b318f2"
-      name = "Party Port"
+      name = "Named Port"
     }
     #       "42" = {
     #         port_profile_id = "669c1ef8329aae15c4b3f791"
-    #         name = "Port 42"
+    #         name = "Port Profile ID"
     #       }
-    #       "44" = {
-    #         native_network_id = ""
-    #       }
+    "44" = {
+      name              = "Disabled native network"
+      native_network_id = ""
+    }
     "45" = {
       aggregate_num_ports = 2
       operation           = "aggregate"
-      #         native_network_id = "669c0336329aae15c4b318f2"
-      name = "Port 45"
+      name                = "Aggregate 1"
     }
     "46" = {
       name = "Aggregate 2"

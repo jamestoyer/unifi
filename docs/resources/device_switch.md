@@ -60,6 +60,7 @@ Optional:
 - `full_duplex` (Boolean)
 - `link_speed` (Number) An override for the link speed of the port.
 - `mirror_port_index` (Number) The index of the port to mirror traffic to.
+- `native_network_id` (String) The native network used for VLAN traffic, i.e. not tagged with a VLAN ID. Untagged traffic from devices connected to this port will be placed on to the selected VLAN. Setting this to and empty string (which this defaults to) will prevent untagged traffic from being placed in to a VLAN by default.
 - `operation` (String)
 - `poe_mode` (String)
 

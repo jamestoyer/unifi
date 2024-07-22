@@ -145,7 +145,7 @@ func (r *DeviceSwitchResource) Read(ctx context.Context, req resource.ReadReques
 		return
 	}
 
-	data = newDeviceSwitchResourceModel(device, site, data)
+	data = newDeviceSwitchResourceModel(ctx, device, site, data)
 
 	// Save updated data into Terraform state
 	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
@@ -189,7 +189,7 @@ func (r *DeviceSwitchResource) Update(ctx context.Context, req resource.UpdateRe
 	}
 
 	// TODO: (jtoyer) Wait until device has finished updating after before saving the state
-	data = newDeviceSwitchResourceModel(device, site, data)
+	data = newDeviceSwitchResourceModel(ctx, device, site, data)
 	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
 }
 
@@ -411,7 +411,7 @@ func (m *DeviceSwitchResourceModel) toUnifiDevice() (*unifi.Device, diag.Diagnos
 	return device, diags
 }
 
-func newDeviceSwitchResourceModel(device *unifi.Device, site string, model DeviceSwitchResourceModel) DeviceSwitchResourceModel {
+func newDeviceSwitchResourceModel(ctx context.Context, device *unifi.Device, site string, model DeviceSwitchResourceModel) DeviceSwitchResourceModel {
 	// Computed values
 	model.Model = types.StringPointerValue(device.Model)
 	model.Site = types.StringValue(site)
@@ -611,9 +611,9 @@ type DeviceSwitchPortOverrideResourceModel struct {
 	LinkSpeed         types.Int32  `tfsdk:"link_speed"`
 	MirrorPortIndex   types.Int32  `tfsdk:"mirror_port_index"`
 	Name              types.String `tfsdk:"name"`
-	// NativeNetworkID types.String `tfsdk:"native_network_id"`
-	Operation types.String `tfsdk:"operation"`
-	POEMode   types.String `tfsdk:"poe_mode"`
+	NativeNetworkID   types.String `tfsdk:"native_network_id"`
+	Operation         types.String `tfsdk:"operation"`
+	POEMode           types.String `tfsdk:"poe_mode"`
 	// PortProfileID   types.String `tfsdk:"port_profile_id"`
 }
 
@@ -698,16 +698,19 @@ func (m *DeviceSwitchPortOverrideResourceModel) schema() schema.NestedAttributeO
 					stringvalidator.LengthBetween(0, 128),
 				},
 			},
-			// "native_network_id": schema.StringAttribute{
-			// 	MarkdownDescription: "The native network used for VLAN traffic, i.e. not tagged with a " +
-			// 		"VLAN ID. Untagged traffic from devices connected to this port will be placed on to " +
-			// 		"the selected VLAN. Setting this to and empty string (which this defaults to) will prevent" +
-			// 		" untagged traffic from being placed in to a VLAN by default.",
-			// 	Optional: true,
-			// 	Validators: []validator.String{
-			// 		stringvalidator.ConflictsWith(path.MatchRelative().AtParent().AtName("port_profile_id")),
-			// 	},
-			// },
+			"native_network_id": schema.StringAttribute{
+				MarkdownDescription: "The native network used for VLAN traffic, i.e. not tagged with a " +
+					"VLAN ID. Untagged traffic from devices connected to this port will be placed on to " +
+					"the selected VLAN. Setting this to and empty string (which this defaults to) will prevent" +
+					" untagged traffic from being placed in to a VLAN by default.",
+				Computed: true,
+				Optional: true,
+				PlanModifiers: []planmodifier.String{
+					// When this is unknown we should just use the state. If the remote value has changed that's means
+					// it's been hand jammed and should really be set in TF instead.
+					stringplanmodifier.UseStateForUnknown(),
+				},
+			},
 			"operation": schema.StringAttribute{
 				Computed: true,
 				Optional: true,
@@ -864,6 +867,12 @@ func (m *DeviceSwitchPortOverrideResourceModel) toUnifiStruct(portIndex int) (un
 		settingPreference = portOverrideSettingPreferenceManual
 	}
 
+	nativeNetworkID := m.NativeNetworkID
+	if m.NativeNetworkID.IsUnknown() {
+		// When the value is unknown, set it to a nil string. This will ensure the value isn't overridden
+		nativeNetworkID = types.StringPointerValue(nil)
+	}
+
 	return unifi.DevicePortOverrides{
 		// Computed values
 		Autoneg:           &autoNegotiateLinkSpeed,
@@ -875,6 +884,7 @@ func (m *DeviceSwitchPortOverrideResourceModel) toUnifiStruct(portIndex int) (un
 		FullDuplex:        m.FullDuplex.ValueBoolPointer(),
 		MirrorPortIDX:     utils.IntPtrValue(m.MirrorPortIndex.ValueInt32Pointer()),
 		Name:              m.Name.ValueStringPointer(),
+		NATiveNetworkID:   nativeNetworkID.ValueStringPointer(),
 		OpMode:            m.Operation.ValueStringPointer(),
 		PoeMode:           m.POEMode.ValueStringPointer(),
 		Speed:             utils.IntPtrValue(m.LinkSpeed.ValueInt32Pointer()),
@@ -889,9 +899,9 @@ func newDeviceSwitchPortOverrideResourceModel(override unifi.DevicePortOverrides
 		LinkSpeed:         types.Int32PointerValue(utils.Int32PtrValue(override.Speed)),
 		MirrorPortIndex:   types.Int32PointerValue(utils.Int32PtrValue(override.MirrorPortIDX)),
 		Name:              types.StringPointerValue(override.Name),
-		// NativeNetworkID: types.StringPointerValue(nativeNetworkID),
-		Operation: types.StringPointerValue(override.OpMode),
-		POEMode:   types.StringPointerValue(override.PoeMode),
+		NativeNetworkID:   types.StringPointerValue(override.NATiveNetworkID),
+		Operation:         types.StringPointerValue(override.OpMode),
+		POEMode:           types.StringPointerValue(override.PoeMode),
 		// PortProfileID:   types.StringPointerValue(override.PortProfileID),
 	}
 }
