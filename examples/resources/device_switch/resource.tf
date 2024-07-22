@@ -38,7 +38,7 @@ resource "unifi_device_switch" "example" {
     port_overrides = {
       "39" = {
         full_duplex = true
-        link_speed = "100"
+        link_speed = "1000"
         name = "Port 39"
         native_network_id = "669c0336329aae15c4b318f2"
         operation = "switch"
@@ -46,7 +46,7 @@ resource "unifi_device_switch" "example" {
       "40" = {
         native_network_id = "669c0336329aae15c4b318f2"
         poe_mode = "off"
-        name = "Port 40"
+        name = "40"
       }
       "41"= {
         native_network_id = "669c0336329aae15c4b318f2"

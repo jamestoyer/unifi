@@ -848,24 +848,11 @@ func (m *DeviceSwitchPortOverrideResourceModel) schema() schema.NestedAttributeO
 }
 
 func (m *DeviceSwitchPortOverrideResourceModel) toUnifiStruct(portIndex int) unifi.DevicePortOverrides {
-	var settingPreference string
-	var autoNegotiateLinkSpeed bool
-	switch {
-	case !m.Operation.IsNull():
-		settingPreference = portOverrideSettingPreferenceManual
-	case !m.LinkSpeed.IsNull() || !m.FullDuplex.IsNull():
+	settingPreference := portOverrideSettingPreferenceAuto
+	autoNegotiateLinkSpeed := true
+	if !m.LinkSpeed.IsNull() {
 		autoNegotiateLinkSpeed = false
 		settingPreference = portOverrideSettingPreferenceManual
-	default:
-		autoNegotiateLinkSpeed = true
-		settingPreference = portOverrideSettingPreferenceAuto
-	}
-
-	var name *string
-	if m.Name.IsNull() || m.Name.IsUnknown() {
-		name = nil
-	} else {
-		name = m.Name.ValueStringPointer()
 	}
 
 	return unifi.DevicePortOverrides{
@@ -875,7 +862,7 @@ func (m *DeviceSwitchPortOverrideResourceModel) toUnifiStruct(portIndex int) uni
 
 		// Configurable Values
 		FullDuplex: m.FullDuplex.ValueBoolPointer(),
-		Name:       name,
+		Name:       m.Name.ValueStringPointer(),
 		OpMode:     m.Operation.ValueStringPointer(),
 		PoeMode:    m.POEMode.ValueStringPointer(),
 		PortIDX:    &portIndex,
