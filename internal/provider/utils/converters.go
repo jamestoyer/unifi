@@ -1,5 +1,9 @@
 package utils
 
+func BoolPtr(v bool) *bool {
+	return &v
+}
+
 func Int32PtrValue(val *int) *int32 {
 	if val == nil {
 		return nil
