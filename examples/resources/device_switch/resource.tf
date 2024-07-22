@@ -35,37 +35,48 @@ resource "unifi_device_switch" "example" {
     preferred_dns = "1.2.3.4"
   }
 
-    port_overrides = {
-      "39" = {
-        full_duplex = true
-        link_speed = "1000"
-        name = "Port 39"
-        native_network_id = "669c0336329aae15c4b318f2"
-        operation = "switch"
-      }
-      "40" = {
-        native_network_id = "669c0336329aae15c4b318f2"
-        poe_mode = "off"
-        name = "40"
-      }
-      "41"= {
-        native_network_id = "669c0336329aae15c4b318f2"
-        name = "Party Port"
-      }
-#       "42" = {
-#         port_profile_id = "669c1ef8329aae15c4b3f791"
-#         name = "Port 42"
-#       }
-#       "44" = {
-#         native_network_id = ""
-#       }
-#       "45" ={
-#         native_network_id = "669c0336329aae15c4b318f2"
-#         name = "Port 45"
-#       }
-#       "46" = {
-#         disabled = true
-#         name = "Port 46"
-#       }
+  port_overrides = {
+    "39" = {
+      full_duplex = true
+      link_speed  = "1000"
+      name        = "Port 39"
+      #         native_network_id = "669c0336329aae15c4b318f2"
+      operation = "switch"
     }
+    "40" = {
+      #         native_network_id = "669c0336329aae15c4b318f2"
+      poe_mode = "off"
+      name     = "40"
+    }
+    "41" = {
+      #         native_network_id = "669c0336329aae15c4b318f2"
+      name = "Party Port"
+    }
+    #       "42" = {
+    #         port_profile_id = "669c1ef8329aae15c4b3f791"
+    #         name = "Port 42"
+    #       }
+    #       "44" = {
+    #         native_network_id = ""
+    #       }
+    "45" = {
+      aggregate_num_ports = 2
+      operation           = "aggregate"
+      #         native_network_id = "669c0336329aae15c4b318f2"
+      name = "Port 45"
+    }
+    "46" = {
+      name = "Aggregate 2"
+    }
+    "47" = {
+      #         disabled = true
+      name = "Mirror Target"
+    }
+    "48" = {
+      #         disabled = true
+      mirror_port_index = 47
+      name              = "Mirror Root"
+      operation         = "mirror"
+    }
+  }
 }

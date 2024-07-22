@@ -23,6 +23,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/hashicorp/terraform-plugin-log/tflog"
 	"github.com/jamestoyer/go-unifi/unifi"
+	"github.com/jamestoyer/terraform-provider-unifi/internal/provider/customvalidator"
 	"github.com/jamestoyer/terraform-provider-unifi/internal/provider/utils"
 	"regexp"
 	"strconv"
@@ -383,7 +384,9 @@ func (m *DeviceSwitchResourceModel) toUnifiDevice() (*unifi.Device, diag.Diagnos
 			continue
 		}
 
-		portOverrides = append(portOverrides, override.toUnifiStruct(i))
+		p, pDiags := override.toUnifiStruct(i)
+		diags = append(diags, pDiags...)
+		portOverrides = append(portOverrides, p)
 	}
 
 	if m.ManagementNetworkID.ValueString() == "" {
@@ -603,9 +606,11 @@ func newDeviceSwitchLEDOverrideResourceModel(device *unifi.Device, model *Device
 type DeviceSwitchPortOverrideResourceModel struct {
 	// Configurable Values
 	// Disabled   types.Bool   `tfsdk:"disabled"`
-	FullDuplex types.Bool   `tfsdk:"full_duplex"`
-	LinkSpeed  types.Int32  `tfsdk:"link_speed"`
-	Name       types.String `tfsdk:"name"`
+	AggregateNumPorts types.Int32  `tfsdk:"aggregate_num_ports"`
+	FullDuplex        types.Bool   `tfsdk:"full_duplex"`
+	LinkSpeed         types.Int32  `tfsdk:"link_speed"`
+	MirrorPortIndex   types.Int32  `tfsdk:"mirror_port_index"`
+	Name              types.String `tfsdk:"name"`
 	// NativeNetworkID types.String `tfsdk:"native_network_id"`
 	Operation types.String `tfsdk:"operation"`
 	POEMode   types.String `tfsdk:"poe_mode"`
@@ -615,12 +620,13 @@ type DeviceSwitchPortOverrideResourceModel struct {
 func (m *DeviceSwitchPortOverrideResourceModel) schema() schema.NestedAttributeObject {
 	return schema.NestedAttributeObject{
 		Attributes: map[string]schema.Attribute{
-			// "aggregate_num_ports": schema.Int32Attribute{
-			// 	Optional: true,
-			// 	Validators: []validator.Int32{
-			// 		int32validator.Between(1, 8),
-			// 	},
-			// },
+			"aggregate_num_ports": schema.Int32Attribute{
+				Optional: true,
+				Validators: []validator.Int32{
+					int32validator.Between(1, 8),
+					int32validator.AlsoRequires(path.MatchRelative().AtParent().AtName("operation")),
+				},
+			},
 			// "disabled": schema.BoolAttribute{
 			// 	Computed: true,
 			// 	Optional: true,
@@ -654,7 +660,6 @@ func (m *DeviceSwitchPortOverrideResourceModel) schema() schema.NestedAttributeO
 				Optional: true,
 				Validators: []validator.Bool{
 					boolvalidator.AlsoRequires(path.MatchRelative().AtParent().AtName("link_speed")),
-					// boolvalidator.ConflictsWith(path.MatchRelative().AtParent().AtName("port_profile_id")),
 				},
 			},
 			// "isolation": schema.BoolAttribute{
@@ -668,7 +673,6 @@ func (m *DeviceSwitchPortOverrideResourceModel) schema() schema.NestedAttributeO
 				Validators: []validator.Int32{
 					int32validator.OneOf(10, 100, 1000, 2500, 5000, 10000, 20000, 25000, 40000, 50000, 100000),
 					int32validator.AlsoRequires(path.MatchRelative().AtParent().AtName("full_duplex")),
-					// int32validator.ConflictsWith(path.MatchRelative().AtParent().AtName("port_profile_id")),
 				},
 			},
 			// "lldp_med_enabled": schema.BoolAttribute{
@@ -680,9 +684,14 @@ func (m *DeviceSwitchPortOverrideResourceModel) schema() schema.NestedAttributeO
 			// "lldp_med_notify_enabled": schema.BoolAttribute{
 			// 	Computed: true,
 			// },
-			// "mirror_port_idx": schema.Int32Attribute{
-			// 	Computed: true,
-			// },
+			"mirror_port_index": schema.Int32Attribute{
+				MarkdownDescription: "The index of the port to mirror traffic to.",
+				Optional:            true,
+				Validators: []validator.Int32{
+					int32validator.Between(1, 52),
+					int32validator.AlsoRequires(path.MatchRelative().AtParent().AtName("operation")),
+				},
+			},
 			"name": schema.StringAttribute{
 				Required: true,
 				Validators: []validator.String{
@@ -702,21 +711,19 @@ func (m *DeviceSwitchPortOverrideResourceModel) schema() schema.NestedAttributeO
 			"operation": schema.StringAttribute{
 				Computed: true,
 				Optional: true,
-				// TODO: (jtoyer) Create a custom plan modifier to deal with when a profile ID is set
-				Default: stringdefault.StaticString("switch"),
+				Default:  stringdefault.StaticString("switch"),
 				Validators: []validator.String{
 					stringvalidator.OneOf("switch", "mirror", "aggregate"),
-					// stringvalidator.ConflictsWith(path.MatchRelative().AtParent().AtName("port_profile_id")),
+					customvalidator.StringValueWithPaths("aggregate", path.MatchRelative().AtParent().AtName("aggregate_num_ports")),
+					customvalidator.StringValueWithPaths("mirror", path.MatchRelative().AtParent().AtName("mirror_port_index")),
 				},
 			},
 			"poe_mode": schema.StringAttribute{
 				Computed: true,
 				Optional: true,
-				// TODO: (jtoyer) Create a custom plan modifier to deal with when a profile ID is set
-				Default: stringdefault.StaticString("auto"),
+				Default:  stringdefault.StaticString("auto"),
 				Validators: []validator.String{
 					stringvalidator.OneOf("auto", "pasv24", "passthrough", "off"),
-					// stringvalidator.ConflictsWith(path.MatchRelative().AtParent().AtName("port_profile_id")),
 				},
 			},
 			// "port_keepalive_enabled": schema.BoolAttribute{
@@ -847,7 +854,9 @@ func (m *DeviceSwitchPortOverrideResourceModel) schema() schema.NestedAttributeO
 	}
 }
 
-func (m *DeviceSwitchPortOverrideResourceModel) toUnifiStruct(portIndex int) unifi.DevicePortOverrides {
+func (m *DeviceSwitchPortOverrideResourceModel) toUnifiStruct(portIndex int) (unifi.DevicePortOverrides, diag.Diagnostics) {
+	var diags diag.Diagnostics
+
 	settingPreference := portOverrideSettingPreferenceAuto
 	autoNegotiateLinkSpeed := true
 	if !m.LinkSpeed.IsNull() {
@@ -858,24 +867,28 @@ func (m *DeviceSwitchPortOverrideResourceModel) toUnifiStruct(portIndex int) uni
 	return unifi.DevicePortOverrides{
 		// Computed values
 		Autoneg:           &autoNegotiateLinkSpeed,
+		PortIDX:           &portIndex,
 		SettingPreference: &settingPreference,
 
 		// Configurable Values
-		FullDuplex: m.FullDuplex.ValueBoolPointer(),
-		Name:       m.Name.ValueStringPointer(),
-		OpMode:     m.Operation.ValueStringPointer(),
-		PoeMode:    m.POEMode.ValueStringPointer(),
-		PortIDX:    &portIndex,
-		Speed:      utils.IntPtrValue(m.LinkSpeed.ValueInt32Pointer()),
-	}
+		AggregateNumPorts: utils.IntPtrValue(m.AggregateNumPorts.ValueInt32Pointer()),
+		FullDuplex:        m.FullDuplex.ValueBoolPointer(),
+		MirrorPortIDX:     utils.IntPtrValue(m.MirrorPortIndex.ValueInt32Pointer()),
+		Name:              m.Name.ValueStringPointer(),
+		OpMode:            m.Operation.ValueStringPointer(),
+		PoeMode:           m.POEMode.ValueStringPointer(),
+		Speed:             utils.IntPtrValue(m.LinkSpeed.ValueInt32Pointer()),
+	}, diags
 }
 
 func newDeviceSwitchPortOverrideResourceModel(override unifi.DevicePortOverrides) DeviceSwitchPortOverrideResourceModel {
 	return DeviceSwitchPortOverrideResourceModel{
 		// Configurable Values
-		FullDuplex: types.BoolPointerValue(override.FullDuplex),
-		LinkSpeed:  types.Int32PointerValue(utils.Int32PtrValue(override.Speed)),
-		Name:       types.StringPointerValue(override.Name),
+		AggregateNumPorts: types.Int32PointerValue(utils.Int32PtrValue(override.AggregateNumPorts)),
+		FullDuplex:        types.BoolPointerValue(override.FullDuplex),
+		LinkSpeed:         types.Int32PointerValue(utils.Int32PtrValue(override.Speed)),
+		MirrorPortIndex:   types.Int32PointerValue(utils.Int32PtrValue(override.MirrorPortIDX)),
+		Name:              types.StringPointerValue(override.Name),
 		// NativeNetworkID: types.StringPointerValue(nativeNetworkID),
 		Operation: types.StringPointerValue(override.OpMode),
 		POEMode:   types.StringPointerValue(override.PoeMode),

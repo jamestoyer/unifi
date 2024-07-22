@@ -24,7 +24,7 @@ A Unifi switch device.
 ### Optional
 
 - `disabled` (Boolean)
-- `led_override` (Attributes) Overrides for the switch LEDs. (see [below for nested schema](#nestedatt--led_override))
+- `led_settings` (Attributes) Overrides for the switch LEDs. (see [below for nested schema](#nestedatt--led_settings))
 - `port_overrides` (Attributes Map) (see [below for nested schema](#nestedatt--port_overrides))
 - `site` (String) The site the switch belongs to. Setting this overrides the default site set in the provider
 - `snmp_contact` (String)
@@ -37,8 +37,8 @@ A Unifi switch device.
 - `model` (String)
 - `site_id` (String) The Unifi internal ID of the site.
 
-<a id="nestedatt--led_override"></a>
-### Nested Schema for `led_override`
+<a id="nestedatt--led_settings"></a>
+### Nested Schema for `led_settings`
 
 Optional:
 
@@ -50,10 +50,16 @@ Optional:
 <a id="nestedatt--port_overrides"></a>
 ### Nested Schema for `port_overrides`
 
+Required:
+
+- `name` (String)
+
 Optional:
 
+- `aggregate_num_ports` (Number)
 - `full_duplex` (Boolean)
-- `link_speed` (Number) An override for the link speed of the port. Setting this to `0` indicates that this is auto negotiated
+- `link_speed` (Number) An override for the link speed of the port.
+- `mirror_port_index` (Number) The index of the port to mirror traffic to.
 - `operation` (String)
 - `poe_mode` (String)
 
