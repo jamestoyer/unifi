@@ -68,10 +68,10 @@ resource "unifi_device_switch" "example" {
     "41" = {
       name = "Named Port"
     }
-          "42" = {
-            port_profile_id = "669c1ef8329aae15c4b3f791"
-            name = "Port Profile ID"
-          }
+    "42" = {
+      port_profile_id = "669c1ef8329aae15c4b3f791"
+      name            = "Port Profile"
+    }
     "44" = {
       name              = "Disabled native network"
       native_network_id = ""

@@ -64,6 +64,7 @@ Optional:
 - `native_network_id` (String) The native network used for VLAN traffic, i.e. not tagged with a VLAN ID. Untagged traffic from devices connected to this port will be placed on to the selected VLAN. Setting this to and empty string (which this defaults to) will prevent untagged traffic from being placed in to a VLAN by default.
 - `operation` (String)
 - `poe_mode` (String)
+- `port_profile_id` (String) The ID of a port profile to assign to the port. This will override nearly all local settings of the port.
 - `tagged_vlan_management` (String)
 
 

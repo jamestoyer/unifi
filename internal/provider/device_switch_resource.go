@@ -24,6 +24,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/hashicorp/terraform-plugin-log/tflog"
 	"github.com/jamestoyer/go-unifi/unifi"
+	"github.com/jamestoyer/terraform-provider-unifi/internal/provider/customplanmodifier"
 	"github.com/jamestoyer/terraform-provider-unifi/internal/provider/customvalidator"
 	"github.com/jamestoyer/terraform-provider-unifi/internal/provider/utils"
 	"regexp"
@@ -723,8 +724,10 @@ func (m *DeviceSwitchPortOverrideResourceModel) schema() schema.NestedAttributeO
 				Optional: true,
 				PlanModifiers: []planmodifier.String{
 					// When this is unknown we should just use the state. If the remote value has changed that's means
-					// it's been hand jammed and should really be set in TF instead.
+					// it's been hand jammed and should really be set in TF instead. The only time it will change is if
+					// there is a port profile set.
 					stringplanmodifier.UseStateForUnknown(),
+					customplanmodifier.PortOverridePortProfileIDString(),
 				},
 				Validators: []validator.String{
 					stringvalidator.ConflictsWith(path.MatchRelative().AtParent().AtName("port_profile_id")),
@@ -734,6 +737,9 @@ func (m *DeviceSwitchPortOverrideResourceModel) schema() schema.NestedAttributeO
 				Computed: true,
 				Optional: true,
 				Default:  stringdefault.StaticString("switch"),
+				PlanModifiers: []planmodifier.String{
+					customplanmodifier.PortOverridePortProfileIDString(),
+				},
 				Validators: []validator.String{
 					stringvalidator.OneOf("switch", "mirror", "aggregate"),
 					stringvalidator.ConflictsWith(path.MatchRelative().AtParent().AtName("port_profile_id")),
@@ -869,6 +875,9 @@ func (m *DeviceSwitchPortOverrideResourceModel) schema() schema.NestedAttributeO
 				Computed: true,
 				Optional: true,
 				Default:  stringdefault.StaticString("auto"),
+				PlanModifiers: []planmodifier.String{
+					customplanmodifier.PortOverridePortProfileIDString(),
+				},
 				Validators: []validator.String{
 					stringvalidator.OneOf("auto", "block_all", "custom"),
 					stringvalidator.ConflictsWith(path.MatchRelative().AtParent().AtName("port_profile_id")),
@@ -947,41 +956,3 @@ func newDeviceSwitchPortOverrideResourceModel(ctx context.Context, override unif
 		TaggedVLANManagement:     types.StringPointerValue(override.TaggedVLANMgmt),
 	}, diags
 }
-
-// // portOverrideAdvancedSettingsValue implements the plan modifier.
-// type portOverrideAdvancedSettingsValue struct{}
-//
-// // Description returns a human-readable description of the plan modifier.
-// func (m portOverrideAdvancedSettingsValue) Description(ctx context.Context) string {
-// 	return "The value will be auto when no advance settings are specified and manual when any are."
-// }
-//
-// // MarkdownDescription returns a markdown description of the plan modifier.
-// func (m portOverrideAdvancedSettingsValue) MarkdownDescription(_ context.Context) string {
-// 	return "The value will be `auto` when no advance settings are specified and `manual` when any are."
-// }
-//
-// // PlanModifyString implements the plan modification logic.
-// func (m portOverrideAdvancedSettingsValue) PlanModifyString(ctx context.Context, req planmodifier.StringRequest, resp *planmodifier.StringResponse) {
-// 	// Do nothing if there is no state value.
-// 	if req.StateValue.IsNull() {
-// 		return
-// 	}
-//
-// 	// var linkSpeed types.Int32
-// 	req.Config.GetAttribute(ctx, req.Path.ParentPath().AtName("link_speed"), &linkSpeed)
-// 	// mode := "auto"
-// 	// switch {
-// 	// case linkSpeed.ValueInt32() > 0:
-// 	// 	mode = "manual"
-// 	// }
-//
-// 	// resp.PlanValue = types.StringValue(mode)
-// }
-//
-// // CalculatePortOverrideAdvancedSettingsValue returns a plan modifier that calculates the value of a port override's
-// // advanced settings, based upon other fields that are set. This removes the need for the user to automatically set these.
-//
-// func CalculatePortOverrideAdvancedSettingsValue() planmodifier.String {
-// 	return portOverrideAdvancedSettingsValue{}
-// }
