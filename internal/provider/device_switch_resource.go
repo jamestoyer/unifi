@@ -7,6 +7,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework-nettypes/iptypes"
 	"github.com/hashicorp/terraform-plugin-framework-validators/boolvalidator"
 	"github.com/hashicorp/terraform-plugin-framework-validators/int32validator"
+	"github.com/hashicorp/terraform-plugin-framework-validators/listvalidator"
 	"github.com/hashicorp/terraform-plugin-framework-validators/stringvalidator"
 	"github.com/hashicorp/terraform-plugin-framework/attr"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
@@ -39,9 +40,6 @@ const (
 
 	portOverrideSettingPreferenceAuto   = "auto"
 	portOverrideSettingPreferenceManual = "manual"
-
-	portOverrideForwardAll      = "all"
-	portOverrideForwardDisabled = "disabled"
 )
 
 var (
@@ -145,7 +143,10 @@ func (r *DeviceSwitchResource) Read(ctx context.Context, req resource.ReadReques
 		return
 	}
 
-	data = newDeviceSwitchResourceModel(ctx, device, site, data)
+	data, diags := newDeviceSwitchResourceModel(ctx, device, site, data)
+	if diags.HasError() {
+		resp.Diagnostics.Append(diags...)
+	}
 
 	// Save updated data into Terraform state
 	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
@@ -166,7 +167,7 @@ func (r *DeviceSwitchResource) Update(ctx context.Context, req resource.UpdateRe
 		site = data.Site.ValueString()
 	}
 
-	device, diags := data.toUnifiDevice()
+	device, diags := data.toUnifiDevice(ctx)
 	if diags.HasError() {
 		resp.Diagnostics.Append(diags...)
 		return
@@ -189,7 +190,11 @@ func (r *DeviceSwitchResource) Update(ctx context.Context, req resource.UpdateRe
 	}
 
 	// TODO: (jtoyer) Wait until device has finished updating after before saving the state
-	data = newDeviceSwitchResourceModel(ctx, device, site, data)
+	data, diags = newDeviceSwitchResourceModel(ctx, device, site, data)
+	if diags.HasError() {
+		resp.Diagnostics.Append(diags...)
+	}
+
 	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
 }
 
@@ -373,7 +378,7 @@ func (m *DeviceSwitchResourceModel) schema(ctx context.Context, resp *resource.S
 	}
 }
 
-func (m *DeviceSwitchResourceModel) toUnifiDevice() (*unifi.Device, diag.Diagnostics) {
+func (m *DeviceSwitchResourceModel) toUnifiDevice(ctx context.Context) (*unifi.Device, diag.Diagnostics) {
 	var diags diag.Diagnostics
 	var portOverrides []unifi.DevicePortOverrides
 	for index, override := range m.PortOverrides {
@@ -384,7 +389,7 @@ func (m *DeviceSwitchResourceModel) toUnifiDevice() (*unifi.Device, diag.Diagnos
 			continue
 		}
 
-		p, pDiags := override.toUnifiStruct(i)
+		p, pDiags := override.toUnifiStruct(ctx, i)
 		diags = append(diags, pDiags...)
 		portOverrides = append(portOverrides, p)
 	}
@@ -403,15 +408,14 @@ func (m *DeviceSwitchResourceModel) toUnifiDevice() (*unifi.Device, diag.Diagnos
 		MgmtNetworkID:              m.ManagementNetworkID.ValueStringPointer(),
 		Name:                       m.Name.ValueStringPointer(),
 		PortOverrides:              portOverrides,
-		// PortOverrides: []unifi.DevicePortOverrides{},
-		SnmpContact:  m.SNMPContact.ValueStringPointer(),
-		SnmpLocation: m.SNMPLocation.ValueStringPointer(),
+		SnmpContact:                m.SNMPContact.ValueStringPointer(),
+		SnmpLocation:               m.SNMPLocation.ValueStringPointer(),
 	}
 
 	return device, diags
 }
 
-func newDeviceSwitchResourceModel(ctx context.Context, device *unifi.Device, site string, model DeviceSwitchResourceModel) DeviceSwitchResourceModel {
+func newDeviceSwitchResourceModel(ctx context.Context, device *unifi.Device, site string, model DeviceSwitchResourceModel) (DeviceSwitchResourceModel, diag.Diagnostics) {
 	// Computed values
 	model.Model = types.StringPointerValue(device.Model)
 	model.Site = types.StringValue(site)
@@ -427,14 +431,21 @@ func newDeviceSwitchResourceModel(ctx context.Context, device *unifi.Device, sit
 	model.SNMPLocation = types.StringPointerValue(device.SnmpLocation)
 	model.StaticIPSettings = newDeviceSwitchStaticIPSettingsResourceModel(device.ConfigNetwork, model.StaticIPSettings)
 
+	var diags diag.Diagnostics
 	overrides := make(map[string]DeviceSwitchPortOverrideResourceModel, len(device.PortOverrides))
 	for _, override := range device.PortOverrides {
 		index := strconv.Itoa(*override.PortIDX)
-		overrides[index] = newDeviceSwitchPortOverrideResourceModel(override)
+		m, err := newDeviceSwitchPortOverrideResourceModel(ctx, override)
+		if err.HasError() {
+			diags.Append(err...)
+			continue
+		}
+
+		overrides[index] = m
 	}
 
 	model.PortOverrides = overrides
-	return model
+	return model, diags
 }
 
 type DeviceSwitchStaticIPSettingResourceModel struct {
@@ -606,15 +617,17 @@ func newDeviceSwitchLEDOverrideResourceModel(device *unifi.Device, model *Device
 type DeviceSwitchPortOverrideResourceModel struct {
 	// Configurable Values
 	// Disabled   types.Bool   `tfsdk:"disabled"`
-	AggregateNumPorts types.Int32  `tfsdk:"aggregate_num_ports"`
-	FullDuplex        types.Bool   `tfsdk:"full_duplex"`
-	LinkSpeed         types.Int32  `tfsdk:"link_speed"`
-	MirrorPortIndex   types.Int32  `tfsdk:"mirror_port_index"`
-	Name              types.String `tfsdk:"name"`
-	NativeNetworkID   types.String `tfsdk:"native_network_id"`
-	Operation         types.String `tfsdk:"operation"`
-	POEMode           types.String `tfsdk:"poe_mode"`
+	AggregateNumPorts        types.Int32  `tfsdk:"aggregate_num_ports"`
+	ExcludedTaggedNetworkIds types.List   `tfsdk:"excluded_tagged_network_ids"`
+	FullDuplex               types.Bool   `tfsdk:"full_duplex"`
+	LinkSpeed                types.Int32  `tfsdk:"link_speed"`
+	MirrorPortIndex          types.Int32  `tfsdk:"mirror_port_index"`
+	Name                     types.String `tfsdk:"name"`
+	NativeNetworkID          types.String `tfsdk:"native_network_id"`
+	Operation                types.String `tfsdk:"operation"`
+	POEMode                  types.String `tfsdk:"poe_mode"`
 	// PortProfileID   types.String `tfsdk:"port_profile_id"`
+	TaggedVLANManagement types.String `tfsdk:"tagged_vlan_management"`
 }
 
 func (m *DeviceSwitchPortOverrideResourceModel) schema() schema.NestedAttributeObject {
@@ -645,11 +658,14 @@ func (m *DeviceSwitchPortOverrideResourceModel) schema() schema.NestedAttributeO
 			// "egress_rate_limit_kbps_enabled": schema.BoolAttribute{
 			// 	Computed: true,
 			// },
-			// "excluded_network_ids": schema.ListAttribute{
-			// 	MarkdownDescription: "A list of net"
-			// 	ElementType: types.StringType,
-			// 	Optional:    true,
-			// },
+			"excluded_tagged_network_ids": schema.ListAttribute{
+				MarkdownDescription: "One or more VLANs that are tagged on this port.",
+				ElementType:         types.StringType,
+				Optional:            true,
+				Validators: []validator.List{
+					listvalidator.AlsoRequires(path.MatchRelative().AtParent().AtName("tagged_vlan_management")),
+				},
+			},
 			// "fec_mode": schema.StringAttribute{
 			// 	Computed: true,
 			// },
@@ -845,9 +861,15 @@ func (m *DeviceSwitchPortOverrideResourceModel) schema() schema.NestedAttributeO
 			// "stp_port_mode": schema.BoolAttribute{
 			// 	Computed: true,
 			// },
-			// "tagged_vlan_mgmt": schema.StringAttribute{
-			// 	Computed: true,
-			// },
+			"tagged_vlan_management": schema.StringAttribute{
+				Computed: true,
+				Optional: true,
+				Default:  stringdefault.StaticString("auto"),
+				Validators: []validator.String{
+					stringvalidator.OneOf("auto", "block_all", "custom"),
+					customvalidator.StringValueWithPaths("custom", path.MatchRelative().AtParent().AtName("excluded_tagged_network_ids")),
+				},
+			},
 			// "voice_networkconf_id": schema.StringAttribute{
 			// 	MarkdownDescription: "Uses LLPD-MED to place a VoIP phone on the specified VLAN. Devices " +
 			// 		"connected to the phone are placed in the Native VLAN.",
@@ -857,7 +879,7 @@ func (m *DeviceSwitchPortOverrideResourceModel) schema() schema.NestedAttributeO
 	}
 }
 
-func (m *DeviceSwitchPortOverrideResourceModel) toUnifiStruct(portIndex int) (unifi.DevicePortOverrides, diag.Diagnostics) {
+func (m *DeviceSwitchPortOverrideResourceModel) toUnifiStruct(ctx context.Context, portIndex int) (unifi.DevicePortOverrides, diag.Diagnostics) {
 	var diags diag.Diagnostics
 
 	settingPreference := portOverrideSettingPreferenceAuto
@@ -873,6 +895,14 @@ func (m *DeviceSwitchPortOverrideResourceModel) toUnifiStruct(portIndex int) (un
 		nativeNetworkID = types.StringPointerValue(nil)
 	}
 
+	var excludedNetworkIDs *[]string
+	if !m.ExcludedTaggedNetworkIds.IsNull() {
+		elements := make([]string, 0, len(m.ExcludedTaggedNetworkIds.Elements()))
+		eDiags := m.ExcludedTaggedNetworkIds.ElementsAs(ctx, &elements, false)
+		diags.Append(eDiags...)
+		excludedNetworkIDs = &elements
+	}
+
 	return unifi.DevicePortOverrides{
 		// Computed values
 		Autoneg:           &autoNegotiateLinkSpeed,
@@ -880,30 +910,36 @@ func (m *DeviceSwitchPortOverrideResourceModel) toUnifiStruct(portIndex int) (un
 		SettingPreference: &settingPreference,
 
 		// Configurable Values
-		AggregateNumPorts: utils.IntPtrValue(m.AggregateNumPorts.ValueInt32Pointer()),
-		FullDuplex:        m.FullDuplex.ValueBoolPointer(),
-		MirrorPortIDX:     utils.IntPtrValue(m.MirrorPortIndex.ValueInt32Pointer()),
-		Name:              m.Name.ValueStringPointer(),
-		NATiveNetworkID:   nativeNetworkID.ValueStringPointer(),
-		OpMode:            m.Operation.ValueStringPointer(),
-		PoeMode:           m.POEMode.ValueStringPointer(),
-		Speed:             utils.IntPtrValue(m.LinkSpeed.ValueInt32Pointer()),
+		AggregateNumPorts:  utils.IntPtrValue(m.AggregateNumPorts.ValueInt32Pointer()),
+		ExcludedNetworkIDs: excludedNetworkIDs,
+		FullDuplex:         m.FullDuplex.ValueBoolPointer(),
+		MirrorPortIDX:      utils.IntPtrValue(m.MirrorPortIndex.ValueInt32Pointer()),
+		Name:               m.Name.ValueStringPointer(),
+		NATiveNetworkID:    nativeNetworkID.ValueStringPointer(),
+		OpMode:             m.Operation.ValueStringPointer(),
+		PoeMode:            m.POEMode.ValueStringPointer(),
+		Speed:              utils.IntPtrValue(m.LinkSpeed.ValueInt32Pointer()),
+		TaggedVLANMgmt:     m.TaggedVLANManagement.ValueStringPointer(),
 	}, diags
 }
 
-func newDeviceSwitchPortOverrideResourceModel(override unifi.DevicePortOverrides) DeviceSwitchPortOverrideResourceModel {
+func newDeviceSwitchPortOverrideResourceModel(ctx context.Context, override unifi.DevicePortOverrides) (DeviceSwitchPortOverrideResourceModel, diag.Diagnostics) {
+	excludedNetworkIDs, diags := types.ListValueFrom(ctx, types.StringType, override.ExcludedNetworkIDs)
+
 	return DeviceSwitchPortOverrideResourceModel{
 		// Configurable Values
-		AggregateNumPorts: types.Int32PointerValue(utils.Int32PtrValue(override.AggregateNumPorts)),
-		FullDuplex:        types.BoolPointerValue(override.FullDuplex),
-		LinkSpeed:         types.Int32PointerValue(utils.Int32PtrValue(override.Speed)),
-		MirrorPortIndex:   types.Int32PointerValue(utils.Int32PtrValue(override.MirrorPortIDX)),
-		Name:              types.StringPointerValue(override.Name),
-		NativeNetworkID:   types.StringPointerValue(override.NATiveNetworkID),
-		Operation:         types.StringPointerValue(override.OpMode),
-		POEMode:           types.StringPointerValue(override.PoeMode),
+		AggregateNumPorts:        types.Int32PointerValue(utils.Int32PtrValue(override.AggregateNumPorts)),
+		ExcludedTaggedNetworkIds: excludedNetworkIDs,
+		FullDuplex:               types.BoolPointerValue(override.FullDuplex),
+		LinkSpeed:                types.Int32PointerValue(utils.Int32PtrValue(override.Speed)),
+		MirrorPortIndex:          types.Int32PointerValue(utils.Int32PtrValue(override.MirrorPortIDX)),
+		Name:                     types.StringPointerValue(override.Name),
+		NativeNetworkID:          types.StringPointerValue(override.NATiveNetworkID),
+		Operation:                types.StringPointerValue(override.OpMode),
+		POEMode:                  types.StringPointerValue(override.PoeMode),
 		// PortProfileID:   types.StringPointerValue(override.PortProfileID),
-	}
+		TaggedVLANManagement: types.StringPointerValue(override.TaggedVLANMgmt),
+	}, diags
 }
 
 // // portOverrideAdvancedSettingsValue implements the plan modifier.

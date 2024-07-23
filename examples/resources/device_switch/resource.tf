@@ -36,6 +36,21 @@ resource "unifi_device_switch" "example" {
   }
 
   port_overrides = {
+    "36" = {
+      excluded_tagged_network_ids = [
+        "669c08b2329aae15c4b3d60a",
+      ]
+      name                   = "Custom Tagged VLAN"
+      native_network_id      = "669c0336329aae15c4b318f2"
+      operation              = "switch"
+      poe_mode               = "auto"
+      tagged_vlan_management = "custom"
+    },
+
+    "37" = {
+      name                   = "Block All Tagged VLAN"
+      tagged_vlan_management = "block_all"
+    }
     "38" = {
       name              = "Native Network Override"
       native_network_id = "669c08b2329aae15c4b3d60a"
