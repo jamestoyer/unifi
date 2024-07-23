@@ -37,7 +37,7 @@ resource "unifi_device_switch" "example" {
 
   port_overrides = {
     "35" = {
-      name                   = "Disabled"
+      name     = "Disabled"
       disabled = true
     }
     "36" = {

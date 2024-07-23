@@ -57,6 +57,7 @@ Required:
 Optional:
 
 - `aggregate_num_ports` (Number)
+- `disabled` (Boolean)
 - `excluded_tagged_network_ids` (List of String) One or more VLANs that are tagged on this port.
 - `full_duplex` (Boolean)
 - `link_speed` (Number) An override for the link speed of the port.
