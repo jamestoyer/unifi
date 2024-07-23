@@ -626,8 +626,8 @@ type DeviceSwitchPortOverrideResourceModel struct {
 	NativeNetworkID          types.String `tfsdk:"native_network_id"`
 	Operation                types.String `tfsdk:"operation"`
 	POEMode                  types.String `tfsdk:"poe_mode"`
-	// PortProfileID   types.String `tfsdk:"port_profile_id"`
-	TaggedVLANManagement types.String `tfsdk:"tagged_vlan_management"`
+	PortProfileID            types.String `tfsdk:"port_profile_id"`
+	TaggedVLANManagement     types.String `tfsdk:"tagged_vlan_management"`
 }
 
 func (m *DeviceSwitchPortOverrideResourceModel) schema() schema.NestedAttributeObject {
@@ -726,6 +726,9 @@ func (m *DeviceSwitchPortOverrideResourceModel) schema() schema.NestedAttributeO
 					// it's been hand jammed and should really be set in TF instead.
 					stringplanmodifier.UseStateForUnknown(),
 				},
+				Validators: []validator.String{
+					stringvalidator.ConflictsWith(path.MatchRelative().AtParent().AtName("port_profile_id")),
+				},
 			},
 			"operation": schema.StringAttribute{
 				Computed: true,
@@ -733,6 +736,7 @@ func (m *DeviceSwitchPortOverrideResourceModel) schema() schema.NestedAttributeO
 				Default:  stringdefault.StaticString("switch"),
 				Validators: []validator.String{
 					stringvalidator.OneOf("switch", "mirror", "aggregate"),
+					stringvalidator.ConflictsWith(path.MatchRelative().AtParent().AtName("port_profile_id")),
 					customvalidator.StringValueWithPaths("aggregate", path.MatchRelative().AtParent().AtName("aggregate_num_ports")),
 					customvalidator.StringValueWithPaths("mirror", path.MatchRelative().AtParent().AtName("mirror_port_index")),
 				},
@@ -748,11 +752,11 @@ func (m *DeviceSwitchPortOverrideResourceModel) schema() schema.NestedAttributeO
 			// "port_keepalive_enabled": schema.BoolAttribute{
 			// 	Computed: true,
 			// },
-			// "port_profile_id": schema.StringAttribute{
-			// 	MarkdownDescription: "The ID of a port profile to assign to the port. This will override nearly all" +
-			// 		" local settings of the port.",
-			// 	Optional: true,
-			// },
+			"port_profile_id": schema.StringAttribute{
+				MarkdownDescription: "The ID of a port profile to assign to the port. This will override nearly all" +
+					" local settings of the port.",
+				Optional: true,
+			},
 			// "port_security_enabled": schema.BoolAttribute{
 			// 	Computed: true,
 			// },
@@ -867,6 +871,7 @@ func (m *DeviceSwitchPortOverrideResourceModel) schema() schema.NestedAttributeO
 				Default:  stringdefault.StaticString("auto"),
 				Validators: []validator.String{
 					stringvalidator.OneOf("auto", "block_all", "custom"),
+					stringvalidator.ConflictsWith(path.MatchRelative().AtParent().AtName("port_profile_id")),
 					customvalidator.StringValueWithPaths("custom", path.MatchRelative().AtParent().AtName("excluded_tagged_network_ids")),
 				},
 			},
@@ -918,6 +923,7 @@ func (m *DeviceSwitchPortOverrideResourceModel) toUnifiStruct(ctx context.Contex
 		NATiveNetworkID:    nativeNetworkID.ValueStringPointer(),
 		OpMode:             m.Operation.ValueStringPointer(),
 		PoeMode:            m.POEMode.ValueStringPointer(),
+		PortProfileID:      m.PortProfileID.ValueStringPointer(),
 		Speed:              utils.IntPtrValue(m.LinkSpeed.ValueInt32Pointer()),
 		TaggedVLANMgmt:     m.TaggedVLANManagement.ValueStringPointer(),
 	}, diags
@@ -937,8 +943,8 @@ func newDeviceSwitchPortOverrideResourceModel(ctx context.Context, override unif
 		NativeNetworkID:          types.StringPointerValue(override.NATiveNetworkID),
 		Operation:                types.StringPointerValue(override.OpMode),
 		POEMode:                  types.StringPointerValue(override.PoeMode),
-		// PortProfileID:   types.StringPointerValue(override.PortProfileID),
-		TaggedVLANManagement: types.StringPointerValue(override.TaggedVLANMgmt),
+		PortProfileID:            types.StringPointerValue(override.PortProfileID),
+		TaggedVLANManagement:     types.StringPointerValue(override.TaggedVLANMgmt),
 	}, diags
 }
 
