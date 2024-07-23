@@ -728,9 +728,13 @@ func (m *DeviceSwitchPortOverrideResourceModel) schema() schema.NestedAttributeO
 					// there is a port profile set.
 					stringplanmodifier.UseStateForUnknown(),
 					customplanmodifier.PortOverridePortProfileIDString(),
+					customplanmodifier.PortOverrideDisabledString(""),
 				},
 				Validators: []validator.String{
-					stringvalidator.ConflictsWith(path.MatchRelative().AtParent().AtName("port_profile_id")),
+					stringvalidator.ConflictsWith(
+						path.MatchRelative().AtParent().AtName("disabled"),
+						path.MatchRelative().AtParent().AtName("port_profile_id"),
+					),
 				},
 			},
 			"operation": schema.StringAttribute{
@@ -877,10 +881,14 @@ func (m *DeviceSwitchPortOverrideResourceModel) schema() schema.NestedAttributeO
 				Default:  stringdefault.StaticString("auto"),
 				PlanModifiers: []planmodifier.String{
 					customplanmodifier.PortOverridePortProfileIDString(),
+					customplanmodifier.PortOverrideDisabledString("block_all"),
 				},
 				Validators: []validator.String{
 					stringvalidator.OneOf("auto", "block_all", "custom"),
-					stringvalidator.ConflictsWith(path.MatchRelative().AtParent().AtName("port_profile_id")),
+					stringvalidator.ConflictsWith(
+						path.MatchRelative().AtParent().AtName("disabled"),
+						path.MatchRelative().AtParent().AtName("port_profile_id"),
+					),
 					customvalidator.StringValueWithPaths("custom", path.MatchRelative().AtParent().AtName("excluded_tagged_network_ids")),
 				},
 			},
