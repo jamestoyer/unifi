@@ -36,6 +36,10 @@ resource "unifi_device_switch" "example" {
   }
 
   port_overrides = {
+    "35" = {
+      name                   = "Disabled"
+      disabled = true
+    }
     "36" = {
       excluded_tagged_network_ids = [
         "669c08b2329aae15c4b3d60a",
@@ -46,7 +50,6 @@ resource "unifi_device_switch" "example" {
       poe_mode               = "auto"
       tagged_vlan_management = "custom"
     },
-
     "37" = {
       name                   = "Block All Tagged VLAN"
       tagged_vlan_management = "block_all"

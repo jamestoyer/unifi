@@ -617,7 +617,7 @@ func newDeviceSwitchLEDOverrideResourceModel(device *unifi.Device, model *Device
 
 type DeviceSwitchPortOverrideResourceModel struct {
 	// Configurable Values
-	// Disabled   types.Bool   `tfsdk:"disabled"`
+	Disabled                 types.Bool   `tfsdk:"disabled"`
 	AggregateNumPorts        types.Int32  `tfsdk:"aggregate_num_ports"`
 	ExcludedTaggedNetworkIds types.List   `tfsdk:"excluded_tagged_network_ids"`
 	FullDuplex               types.Bool   `tfsdk:"full_duplex"`
@@ -641,11 +641,11 @@ func (m *DeviceSwitchPortOverrideResourceModel) schema() schema.NestedAttributeO
 					int32validator.AlsoRequires(path.MatchRelative().AtParent().AtName("operation")),
 				},
 			},
-			// "disabled": schema.BoolAttribute{
-			// 	Computed: true,
-			// 	Optional: true,
-			// 	Default:  booldefault.StaticBool(false),
-			// },
+			"disabled": schema.BoolAttribute{
+				Computed: true,
+				Optional: true,
+				Default:  booldefault.StaticBool(false),
+			},
 			// "dot1x_ctrl": schema.StringAttribute{
 			// 	Computed: true,
 			// },
@@ -917,6 +917,16 @@ func (m *DeviceSwitchPortOverrideResourceModel) toUnifiStruct(ctx context.Contex
 		excludedNetworkIDs = &elements
 	}
 
+	portSecurityEnabled := types.BoolPointerValue(nil)
+	taggedVLANManagement := m.TaggedVLANManagement
+	forward := types.StringPointerValue(nil)
+	if m.Disabled.ValueBool() {
+		forward = types.StringValue("disabled")
+		nativeNetworkID = types.StringValue("")
+		portSecurityEnabled = types.BoolValue(true)
+		taggedVLANManagement = types.StringValue("block_all")
+	}
+
 	return unifi.DevicePortOverrides{
 		// Computed values
 		Autoneg:           &autoNegotiateLinkSpeed,
@@ -924,26 +934,34 @@ func (m *DeviceSwitchPortOverrideResourceModel) toUnifiStruct(ctx context.Contex
 		SettingPreference: &settingPreference,
 
 		// Configurable Values
-		AggregateNumPorts:  utils.IntPtrValue(m.AggregateNumPorts.ValueInt32Pointer()),
-		ExcludedNetworkIDs: excludedNetworkIDs,
-		FullDuplex:         m.FullDuplex.ValueBoolPointer(),
-		MirrorPortIDX:      utils.IntPtrValue(m.MirrorPortIndex.ValueInt32Pointer()),
-		Name:               m.Name.ValueStringPointer(),
-		NATiveNetworkID:    nativeNetworkID.ValueStringPointer(),
-		OpMode:             m.Operation.ValueStringPointer(),
-		PoeMode:            m.POEMode.ValueStringPointer(),
-		PortProfileID:      m.PortProfileID.ValueStringPointer(),
-		Speed:              utils.IntPtrValue(m.LinkSpeed.ValueInt32Pointer()),
-		TaggedVLANMgmt:     m.TaggedVLANManagement.ValueStringPointer(),
+		AggregateNumPorts:   utils.IntPtrValue(m.AggregateNumPorts.ValueInt32Pointer()),
+		ExcludedNetworkIDs:  excludedNetworkIDs,
+		Forward:             forward.ValueStringPointer(),
+		FullDuplex:          m.FullDuplex.ValueBoolPointer(),
+		MirrorPortIDX:       utils.IntPtrValue(m.MirrorPortIndex.ValueInt32Pointer()),
+		Name:                m.Name.ValueStringPointer(),
+		NATiveNetworkID:     nativeNetworkID.ValueStringPointer(),
+		OpMode:              m.Operation.ValueStringPointer(),
+		PoeMode:             m.POEMode.ValueStringPointer(),
+		PortProfileID:       m.PortProfileID.ValueStringPointer(),
+		PortSecurityEnabled: portSecurityEnabled.ValueBoolPointer(),
+		Speed:               utils.IntPtrValue(m.LinkSpeed.ValueInt32Pointer()),
+		TaggedVLANMgmt:      taggedVLANManagement.ValueStringPointer(),
 	}, diags
 }
 
 func newDeviceSwitchPortOverrideResourceModel(ctx context.Context, override unifi.DevicePortOverrides) (DeviceSwitchPortOverrideResourceModel, diag.Diagnostics) {
 	excludedNetworkIDs, diags := types.ListValueFrom(ctx, types.StringType, override.ExcludedNetworkIDs)
 
+	disabled := types.BoolValue(false)
+	if override.Forward != nil && *override.Forward == "disabled" {
+		disabled = types.BoolValue(true)
+	}
+
 	return DeviceSwitchPortOverrideResourceModel{
 		// Configurable Values
 		AggregateNumPorts:        types.Int32PointerValue(utils.Int32PtrValue(override.AggregateNumPorts)),
+		Disabled:                 disabled,
 		ExcludedTaggedNetworkIds: excludedNetworkIDs,
 		FullDuplex:               types.BoolPointerValue(override.FullDuplex),
 		LinkSpeed:                types.Int32PointerValue(utils.Int32PtrValue(override.Speed)),
