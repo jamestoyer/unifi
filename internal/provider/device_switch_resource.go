@@ -111,13 +111,46 @@ func (r *DeviceSwitchResource) Create(ctx context.Context, req resource.CreateRe
 	//     return
 	// }
 
-	// For the purposes of this example code, hardcoding a response value to
-	// save into the Terraform state.
-	data.ID = types.StringValue("example-id")
+	site := r.client.site
+	if data.Site.ValueString() != "" {
+		site = data.Site.ValueString()
+	}
 
-	// Write logs using the tflog package
-	// Documentation: https://terraform.io/plugin/log
-	tflog.Trace(ctx, "created a resource")
+	mac := cleanMAC(data.Mac.ValueString())
+	device, err := r.client.GetDeviceByMAC(ctx, site, mac)
+	if err != nil {
+		resp.Diagnostics.AddError("Client Error", fmt.Sprintf("Unable to read switch, got error: %s", err))
+		return
+	}
+
+	if device == nil {
+		resp.Diagnostics.AddError("Switch Error", fmt.Sprintf("Unable to find switch"))
+		return
+	}
+
+	if !device.Adopted {
+		if !data.Adopt.ValueBool() {
+			resp.Diagnostics.AddAttributeError(path.Root("adopt"), "Switch Error", "Device cannot be managed if it is not adopted")
+			return
+		}
+
+		if err = r.client.AdoptDevice(ctx, site, mac); err != nil {
+			resp.Diagnostics.AddError("Client Error", fmt.Sprintf("Unable to adopt switch, got error: %s", err))
+			return
+		}
+
+		// TODO: (jtoyer) Wait until device has finished updating after before saving the state
+	}
+
+	data.ID = types.StringPointerValue(device.ID)
+	data, diags := newDeviceSwitchResourceModel(ctx, device, site, data)
+	if diags.HasError() {
+		resp.Diagnostics.Append(diags...)
+	}
+
+	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
+
+	tflog.Trace(ctx, "Switch created")
 
 	// Save data into Terraform state
 	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
@@ -235,6 +268,7 @@ type DeviceSwitchResourceModel struct {
 	SiteID types.String `tfsdk:"site_id"`
 
 	// Configurable Values
+	Adopt               types.Bool                                       `tfsdk:"adopt"`
 	Disabled            types.Bool                                       `tfsdk:"disabled"`
 	LEDSettings         *DeviceSwitchLEDSettingsResourceModel            `tfsdk:"led_settings"`
 	Mac                 types.String                                     `tfsdk:"mac"`
@@ -287,6 +321,13 @@ func (m *DeviceSwitchResourceModel) schema(ctx context.Context, resp *resource.S
 			},
 
 			// Configurable values
+			"adopt": schema.BoolAttribute{
+				MarkdownDescription: "When true, the switch will be adopted by the controller. If this is `false` the" +
+					" switch must already be imported.",
+				Computed: true,
+				Optional: true,
+				Default:  booldefault.StaticBool(true),
+			},
 			"disabled": schema.BoolAttribute{
 				Optional: true,
 				Computed: true,
