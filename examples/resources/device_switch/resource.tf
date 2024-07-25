@@ -23,7 +23,7 @@ import {
 }
 
 resource "unifi_device_switch" "example" {
-  name = "Example Switch Updates"
+  name = "Example Switch Update"
   mac  = data.unifi_device_switch.example.mac
 
   management_network_id = "669c0336329aae15c4b318f2"

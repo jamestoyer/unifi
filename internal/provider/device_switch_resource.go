@@ -143,7 +143,7 @@ func (r *DeviceSwitchResource) Create(ctx context.Context, req resource.CreateRe
 	}
 
 	data.ID = types.StringPointerValue(device.ID)
-	data, diags := newDeviceSwitchResourceModel(ctx, device, site, data)
+	data, diags := r.update(ctx, site, data)
 	if diags.HasError() {
 		resp.Diagnostics.Append(diags...)
 	}
@@ -198,35 +198,7 @@ func (r *DeviceSwitchResource) Update(ctx context.Context, req resource.UpdateRe
 		site = data.Site.ValueString()
 	}
 
-	device, diags := data.toUnifiDevice(ctx)
-	if diags.HasError() {
-		resp.Diagnostics.Append(diags...)
-		return
-	}
-
-	device.ID = data.ID.ValueStringPointer()
-
-	device, err := r.client.UpdateDevice(ctx, site, device)
-	if err != nil {
-		// When there are no changes in v8 the API doesn't return the device details. This causes the client to assume
-		// the device doesn't exist. To work around this for now do a read to get the status.
-		// TODO: (jtoyer) Update the client to handle no changes on update, i.e. a 200 but no body
-		if !errors.Is(err, &unifi.NotFoundError{}) {
-			resp.Diagnostics.AddError("Client Error", fmt.Sprintf("Unable to update switch, got error: %s", err))
-			return
-		}
-
-		resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
-		return
-	}
-
-	_, err = r.waitForDeviceState(ctx, site, data.Mac.ValueString(), unifi.DeviceStateConnected, []unifi.DeviceState{unifi.DeviceStateAdopting, unifi.DeviceStateProvisioning}, 1*time.Minute)
-	if err != nil {
-		resp.Diagnostics.AddError("Client Error", fmt.Sprintf("Timed out updating switch, got error: %s", err))
-		return
-	}
-
-	data, diags = newDeviceSwitchResourceModel(ctx, device, site, data)
+	data, diags := r.update(ctx, site, data)
 	if diags.HasError() {
 		resp.Diagnostics.Append(diags...)
 	}
@@ -268,6 +240,36 @@ func (r *DeviceSwitchResource) Delete(ctx context.Context, req resource.DeleteRe
 
 func (r *DeviceSwitchResource) ImportState(ctx context.Context, req resource.ImportStateRequest, resp *resource.ImportStateResponse) {
 	resource.ImportStatePassthroughID(ctx, path.Root("id"), req, resp)
+}
+
+func (r *DeviceSwitchResource) update(ctx context.Context, site string, data DeviceSwitchResourceModel) (DeviceSwitchResourceModel, diag.Diagnostics) {
+	device, diags := data.toUnifiDevice(ctx)
+	if diags.HasError() {
+		return data, diags
+	}
+
+	device.ID = data.ID.ValueStringPointer()
+
+	device, err := r.client.UpdateDevice(ctx, site, device)
+	if err != nil {
+		// When there are no changes in v8 the API doesn't return the device details. This causes the client to assume
+		// the device doesn't exist. To work around this for now do a read to get the status.
+		// TODO: (jtoyer) Update the client to handle no changes on update, i.e. a 200 but no body
+		if !errors.Is(err, &unifi.NotFoundError{}) {
+			diags.AddError("Client Error", fmt.Sprintf("Unable to update switch, got error: %s", err))
+			return data, diags
+		}
+
+		return data, diags
+	}
+
+	_, err = r.waitForDeviceState(ctx, site, data.Mac.ValueString(), unifi.DeviceStateConnected, []unifi.DeviceState{unifi.DeviceStateAdopting, unifi.DeviceStateProvisioning}, 1*time.Minute)
+	if err != nil {
+		diags.AddError("Client Error", fmt.Sprintf("Timed out updating switch, got error: %s", err))
+		return data, diags
+	}
+
+	return newDeviceSwitchResourceModel(ctx, device, site, data)
 }
 
 func (r *DeviceSwitchResource) waitForDeviceState(ctx context.Context, site, mac string, targetState unifi.DeviceState, pendingStates []unifi.DeviceState, timeout time.Duration) (*unifi.Device, error) {
@@ -502,6 +504,11 @@ func (m *DeviceSwitchResourceModel) toUnifiDevice(ctx context.Context) (*unifi.D
 		p, pDiags := override.toUnifiStruct(ctx, i)
 		diags = append(diags, pDiags...)
 		portOverrides = append(portOverrides, p)
+	}
+
+	if portOverrides == nil {
+		// Port overrides must be an empty, not nil list
+		portOverrides = []unifi.DevicePortOverrides{}
 	}
 
 	if m.ManagementNetworkID.ValueString() == "" {
