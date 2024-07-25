@@ -100,6 +100,11 @@ resource "unifi_device_switch" "example" {
   }
 }
 
+
+data "unifi_device_switch" "adopt" {
+  mac = "00:27:22:00:00:0a"
+}
+
 resource "unifi_device_switch" "adopt" {
   mac = "00:27:22:00:00:0a"
   management_network_id = "669c0336329aae15c4b318f2"

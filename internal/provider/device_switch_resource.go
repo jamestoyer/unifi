@@ -23,6 +23,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/schema/validator"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/hashicorp/terraform-plugin-log/tflog"
+	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/retry"
 	"github.com/jamestoyer/go-unifi/unifi"
 	"github.com/jamestoyer/terraform-provider-unifi/internal/provider/customplanmodifier"
 	"github.com/jamestoyer/terraform-provider-unifi/internal/provider/customtype"
@@ -30,6 +31,8 @@ import (
 	"github.com/jamestoyer/terraform-provider-unifi/internal/provider/utils"
 	"regexp"
 	"strconv"
+	"strings"
+	"time"
 )
 
 const (
@@ -103,7 +106,7 @@ func (r *DeviceSwitchResource) Create(ctx context.Context, req resource.CreateRe
 	if resp.Diagnostics.HasError() {
 		return
 	}
-	
+
 	site := r.client.site
 	if data.Site.ValueString() != "" {
 		site = data.Site.ValueString()
@@ -132,7 +135,11 @@ func (r *DeviceSwitchResource) Create(ctx context.Context, req resource.CreateRe
 			return
 		}
 
-		// TODO: (jtoyer) Wait until device has finished updating after before saving the state
+		device, err = r.waitForDeviceState(ctx, site, mac, unifi.DeviceStateConnected, []unifi.DeviceState{unifi.DeviceStateAdopting, unifi.DeviceStatePending, unifi.DeviceStateProvisioning, unifi.DeviceStateUpgrading}, 2*time.Minute)
+		if err != nil {
+			resp.Diagnostics.AddError("Client Error", fmt.Sprintf("Timed out adopting switch, got error: %s", err))
+			return
+		}
 	}
 
 	data.ID = types.StringPointerValue(device.ID)
@@ -141,11 +148,8 @@ func (r *DeviceSwitchResource) Create(ctx context.Context, req resource.CreateRe
 		resp.Diagnostics.Append(diags...)
 	}
 
-	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
-
 	tflog.Trace(ctx, "Switch created")
 
-	// Save data into Terraform state
 	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
 }
 
@@ -216,7 +220,12 @@ func (r *DeviceSwitchResource) Update(ctx context.Context, req resource.UpdateRe
 		return
 	}
 
-	// TODO: (jtoyer) Wait until device has finished updating after before saving the state
+	_, err = r.waitForDeviceState(ctx, site, data.Mac.ValueString(), unifi.DeviceStateConnected, []unifi.DeviceState{unifi.DeviceStateAdopting, unifi.DeviceStateProvisioning}, 1*time.Minute)
+	if err != nil {
+		resp.Diagnostics.AddError("Client Error", fmt.Sprintf("Timed out updating switch, got error: %s", err))
+		return
+	}
+
 	data, diags = newDeviceSwitchResourceModel(ctx, device, site, data)
 	if diags.HasError() {
 		resp.Diagnostics.Append(diags...)
@@ -248,10 +257,65 @@ func (r *DeviceSwitchResource) Delete(ctx context.Context, req resource.DeleteRe
 		resp.Diagnostics.AddError("Client Error", fmt.Sprintf("Unable to delete switch, got error: %s", err))
 		return
 	}
+
+	_, err := r.waitForDeviceState(ctx, site, data.Mac.ValueString(), unifi.DeviceStatePending, []unifi.DeviceState{unifi.DeviceStateConnected, unifi.DeviceStateDeleting}, 1*time.Minute)
+	var notFoundError *unifi.NotFoundError
+	if !errors.As(err, &notFoundError) {
+		resp.Diagnostics.AddError("Client Error", fmt.Sprintf("Timed out deleting switch, got error: %s", err))
+		return
+	}
 }
 
 func (r *DeviceSwitchResource) ImportState(ctx context.Context, req resource.ImportStateRequest, resp *resource.ImportStateResponse) {
 	resource.ImportStatePassthroughID(ctx, path.Root("id"), req, resp)
+}
+
+func (r *DeviceSwitchResource) waitForDeviceState(ctx context.Context, site, mac string, targetState unifi.DeviceState, pendingStates []unifi.DeviceState, timeout time.Duration) (*unifi.Device, error) {
+	// Always consider unknown to be a pending state.
+	pendingStates = append(pendingStates, unifi.DeviceStateUnknown)
+
+	var pending []string
+	for _, state := range pendingStates {
+		pending = append(pending, state.String())
+	}
+
+	wait := retry.StateChangeConf{
+		Pending: pending,
+		Target:  []string{targetState.String()},
+		Refresh: func() (interface{}, string, error) {
+			device, err := r.client.GetDeviceByMAC(ctx, site, mac)
+
+			var notFoundError *unifi.NotFoundError
+			if errors.As(err, &notFoundError) {
+				err = nil
+			}
+
+			// When a device is forgotten, it will disappear from the UI for a few seconds before reappearing.
+			// During this time, `device.GetDeviceByMAC` will return a 400.
+			//
+			// TODO: (jtoyer) Improve handling of this situation in `go-unifi`.
+			if err != nil && strings.Contains(err.Error(), "api.err.UnknownDevice") {
+				err = nil
+			}
+
+			var state string
+			if device != nil {
+				state = device.State.String()
+			}
+
+			return device, state, err
+		},
+		Timeout:        timeout,
+		NotFoundChecks: 30,
+	}
+
+	outputRaw, err := wait.WaitForStateContext(ctx)
+
+	if output, ok := outputRaw.(*unifi.Device); ok {
+		return output, err
+	}
+
+	return nil, err
 }
 
 type DeviceSwitchResourceModel struct {
