@@ -142,8 +142,13 @@ func (r *DeviceSwitchResource) Create(ctx context.Context, req resource.CreateRe
 		}
 	}
 
+	data, diags := newDeviceSwitchResourceModel(ctx, device, site, data)
+	if diags.HasError() {
+		resp.Diagnostics.Append(diags...)
+	}
+
 	data.ID = types.StringPointerValue(device.ID)
-	data, diags := r.update(ctx, site, data)
+	data, diags = r.update(ctx, site, data)
 	if diags.HasError() {
 		resp.Diagnostics.Append(diags...)
 	}
@@ -414,7 +419,6 @@ func (m *DeviceSwitchResourceModel) schema(ctx context.Context, resp *resource.S
 				Required:            true,
 				CustomType:          customtype.MacType{},
 				PlanModifiers: []planmodifier.String{
-					// TODO: (jtoyer) Add a plan modifier to ignore case changes for the MAC
 					stringplanmodifier.RequiresReplace(),
 				},
 			},

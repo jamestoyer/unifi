@@ -106,7 +106,7 @@ data "unifi_device_switch" "adopt" {
 }
 
 resource "unifi_device_switch" "adopt" {
-  mac = "00:27:22:00:00:0a"
+  mac = "00:27:22:00:00:0A"
   management_network_id = "669c0336329aae15c4b318f2"
   name = "adopted"
 }

@@ -8,6 +8,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/function"
 	"github.com/hashicorp/terraform-plugin-framework/types/basetypes"
 	"net"
+	"strings"
 )
 
 var (
@@ -44,8 +45,19 @@ func (v Mac) ValidateAttribute(ctx context.Context, req xattr.ValidateAttributeR
 		return
 	}
 
-	_, err := net.ParseMAC(v.ValueString())
-	if err != nil {
+	s := v.ValueString()
+	sanitised := strings.ReplaceAll(strings.ToLower(v.StringValue.ValueString()), "-", ":")
+	if sanitised != s {
+		resp.Diagnostics.AddAttributeError(
+			req.Path,
+			"Invalid Mac String Value",
+			"A string value that container upper case characters or dashes was provided.\n\n"+
+				"Given Value: "+s+"\n"+
+				"Expected Value: "+sanitised+"\n",
+		)
+	}
+
+	if _, err := net.ParseMAC(v.ValueString()); err != nil {
 		resp.Diagnostics.AddAttributeError(
 			req.Path,
 			"Invalid Mac String Value",
@@ -56,6 +68,7 @@ func (v Mac) ValidateAttribute(ctx context.Context, req xattr.ValidateAttributeR
 
 		return
 	}
+
 }
 
 // ValidateParameter implements provider-defined function parameter value validation. This type requires the value
@@ -65,8 +78,19 @@ func (v Mac) ValidateParameter(ctx context.Context, req function.ValidateParamet
 		return
 	}
 
-	_, err := net.ParseMAC(v.ValueString())
-	if err != nil {
+	s := v.ValueString()
+	sanitised := strings.ReplaceAll(strings.ToLower(v.StringValue.ValueString()), "-", ":")
+	if sanitised != s {
+		resp.Error = function.NewArgumentFuncError(
+			req.Position,
+			"Invalid Mac String Value: "+
+				"A string value that container upper case characters or dashes was provided.\n\n"+
+				"Given Value: "+s+"\n"+
+				"Expected Value: "+sanitised+"\n",
+		)
+	}
+
+	if _, err := net.ParseMAC(v.ValueString()); err != nil {
 		resp.Error = function.NewArgumentFuncError(
 			req.Position,
 			"Invalid Mac String Value: "+
