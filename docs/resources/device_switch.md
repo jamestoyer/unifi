@@ -26,6 +26,7 @@ A Unifi switch device.
 - `disabled` (Boolean)
 - `led_settings` (Attributes) Overrides for the switch LEDs. (see [below for nested schema](#nestedatt--led_settings))
 - `port_overrides` (Attributes Map) (see [below for nested schema](#nestedatt--port_overrides))
+- `remove_on_destroy` (Boolean) When true, running a destroy will remove the switch from the controller, otherwise the switch is just removed from state.
 - `site` (String) The site the switch belongs to. Setting this overrides the default site set in the provider
 - `snmp_contact` (String)
 - `snmp_location` (String)

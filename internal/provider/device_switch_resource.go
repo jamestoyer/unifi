@@ -209,20 +209,25 @@ func (r *DeviceSwitchResource) Delete(ctx context.Context, req resource.DeleteRe
 		return
 	}
 
-	// If applicable, this is a great opportunity to initialize any necessary
-	// provider client data and make a call using it.
-	// httpResp, err := r.client.Do(httpReq)
-	// if err != nil {
-	//     resp.Diagnostics.AddError("Client Error", fmt.Sprintf("Unable to delete example, got error: %s", err))
-	//     return
-	// }
+	if !data.RemoveOnDestroy.ValueBool() {
+		return
+	}
+
+	site := r.client.site
+	if data.Site.ValueString() != "" {
+		site = data.Site.ValueString()
+	}
+
+	if err := r.client.DeleteDevice(ctx, site, data.ID.ValueString()); err != nil {
+		resp.Diagnostics.AddError("Client Error", fmt.Sprintf("Unable to delete switch, got error: %s", err))
+		return
+	}
 }
 
 func (r *DeviceSwitchResource) ImportState(ctx context.Context, req resource.ImportStateRequest, resp *resource.ImportStateResponse) {
 	resource.ImportStatePassthroughID(ctx, path.Root("id"), req, resp)
 }
 
-// DeviceSwitchResourceModel describes the resource data model.
 type DeviceSwitchResourceModel struct {
 	// Computed Values
 	ID     types.String `tfsdk:"id"`
@@ -236,6 +241,7 @@ type DeviceSwitchResourceModel struct {
 	ManagementNetworkID types.String                                     `tfsdk:"management_network_id"`
 	Name                types.String                                     `tfsdk:"name"`
 	PortOverrides       map[string]DeviceSwitchPortOverrideResourceModel `tfsdk:"port_overrides"`
+	RemoveOnDestroy     types.Bool                                       `tfsdk:"remove_on_destroy"`
 	Site                types.String                                     `tfsdk:"site"`
 	SNMPContact         types.String                                     `tfsdk:"snmp_contact"`
 	SNMPLocation        types.String                                     `tfsdk:"snmp_location"`
@@ -334,6 +340,13 @@ func (m *DeviceSwitchResourceModel) schema(ctx context.Context, resp *resource.S
 			},
 			// TODO: (jtoyer) To enable these we need to set an exclusion on unifi.SettingGlobalSwitch
 			// "radius_profile_id": schema.StringAttribute{}
+			"remove_on_destroy": schema.BoolAttribute{
+				MarkdownDescription: "When true, running a destroy will remove the switch from the controller, " +
+					"otherwise the switch is just removed from state.",
+				Computed: true,
+				Optional: true,
+				Default:  booldefault.StaticBool(false),
+			},
 			"site": schema.StringAttribute{
 				MarkdownDescription: "The site the switch belongs to. Setting this overrides the default site set in " +
 					"the provider",
