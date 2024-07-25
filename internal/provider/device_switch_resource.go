@@ -25,6 +25,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-log/tflog"
 	"github.com/jamestoyer/go-unifi/unifi"
 	"github.com/jamestoyer/terraform-provider-unifi/internal/provider/customplanmodifier"
+	"github.com/jamestoyer/terraform-provider-unifi/internal/provider/customtype"
 	"github.com/jamestoyer/terraform-provider-unifi/internal/provider/customvalidator"
 	"github.com/jamestoyer/terraform-provider-unifi/internal/provider/utils"
 	"regexp"
@@ -102,21 +103,13 @@ func (r *DeviceSwitchResource) Create(ctx context.Context, req resource.CreateRe
 	if resp.Diagnostics.HasError() {
 		return
 	}
-
-	// If applicable, this is a great opportunity to initialize any necessary
-	// provider client data and make a call using it.
-	// httpResp, err := r.client.Do(httpReq)
-	// if err != nil {
-	//     resp.Diagnostics.AddError("Client Error", fmt.Sprintf("Unable to create example, got error: %s", err))
-	//     return
-	// }
-
+	
 	site := r.client.site
 	if data.Site.ValueString() != "" {
 		site = data.Site.ValueString()
 	}
 
-	mac := cleanMAC(data.Mac.ValueString())
+	mac := data.Mac.ValueString()
 	device, err := r.client.GetDeviceByMAC(ctx, site, mac)
 	if err != nil {
 		resp.Diagnostics.AddError("Client Error", fmt.Sprintf("Unable to read switch, got error: %s", err))
@@ -271,7 +264,7 @@ type DeviceSwitchResourceModel struct {
 	Adopt               types.Bool                                       `tfsdk:"adopt"`
 	Disabled            types.Bool                                       `tfsdk:"disabled"`
 	LEDSettings         *DeviceSwitchLEDSettingsResourceModel            `tfsdk:"led_settings"`
-	Mac                 types.String                                     `tfsdk:"mac"`
+	Mac                 customtype.Mac                                   `tfsdk:"mac"`
 	ManagementNetworkID types.String                                     `tfsdk:"management_network_id"`
 	Name                types.String                                     `tfsdk:"name"`
 	PortOverrides       map[string]DeviceSwitchPortOverrideResourceModel `tfsdk:"port_overrides"`
@@ -353,12 +346,10 @@ func (m *DeviceSwitchResourceModel) schema(ctx context.Context, resp *resource.S
 			"mac": schema.StringAttribute{
 				MarkdownDescription: "The MAC address of the device",
 				Required:            true,
+				CustomType:          customtype.MacType{},
 				PlanModifiers: []planmodifier.String{
 					// TODO: (jtoyer) Add a plan modifier to ignore case changes for the MAC
 					stringplanmodifier.RequiresReplace(),
-				},
-				Validators: []validator.String{
-					// TODO: (jtoyer) Add a mac address validator
 				},
 			},
 			"management_network_id": schema.StringAttribute{
@@ -479,7 +470,7 @@ func newDeviceSwitchResourceModel(ctx context.Context, device *unifi.Device, sit
 	// Configurable Values
 	model.Disabled = types.BoolPointerValue(device.Disabled)
 	model.LEDSettings = newDeviceSwitchLEDOverrideResourceModel(device, model.LEDSettings)
-	model.Mac = types.StringPointerValue(device.MAC)
+	model.Mac = customtype.NewMacPointerValue(device.MAC)
 	model.ManagementNetworkID = types.StringPointerValue(device.MgmtNetworkID)
 	model.Name = types.StringPointerValue(device.Name)
 	model.SNMPContact = types.StringPointerValue(device.SnmpContact)
@@ -574,7 +565,7 @@ func (m *DeviceSwitchStaticIPSettingResourceModel) toUnifiStruct() *unifi.Device
 }
 
 func newDeviceSwitchStaticIPSettingsResourceModel(network *unifi.DeviceConfigNetwork, model *DeviceSwitchStaticIPSettingResourceModel) *DeviceSwitchStaticIPSettingResourceModel {
-	if *network.Type == configNetworkTypeDHCP {
+	if network.Type == nil || *network.Type == configNetworkTypeDHCP {
 		return nil
 	}
 
