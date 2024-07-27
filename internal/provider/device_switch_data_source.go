@@ -533,29 +533,18 @@ func (d *DeviceSwitchDataSource) Read(ctx context.Context, req datasource.ReadRe
 	data.StpVersion = types.StringPointerValue(device.StpVersion)
 	data.Type = types.StringPointerValue(device.Type)
 
-	data.ConfigNetwork = &DeviceSwitchConfigNetworkDataSourceModel{
-		BondingEnabled: types.BoolPointerValue(device.ConfigNetwork.BondingEnabled),
-		Type:           types.StringPointerValue(device.ConfigNetwork.Type),
+	if device.ConfigNetwork != nil {
+		data.ConfigNetwork = &DeviceSwitchConfigNetworkDataSourceModel{
+			BondingEnabled: types.BoolPointerValue(device.ConfigNetwork.BondingEnabled),
+			Type:           types.StringPointerValue(device.ConfigNetwork.Type),
+		}
+		data.ConfigNetwork.PreferredDNS = iptypes.NewIPv4AddressPointerValue(device.ConfigNetwork.DNS1)
+		data.ConfigNetwork.AlternativeDNS = iptypes.NewIPv4AddressPointerValue(device.ConfigNetwork.DNS2)
+		data.ConfigNetwork.DNSSuffix = types.StringPointerValue(device.ConfigNetwork.DNSsuffix)
+		data.ConfigNetwork.Gateway = iptypes.NewIPv4AddressPointerValue(device.ConfigNetwork.Gateway)
+		data.ConfigNetwork.IP = iptypes.NewIPv4AddressPointerValue(device.ConfigNetwork.IP)
+		data.ConfigNetwork.Netmask = iptypes.NewIPv4AddressPointerValue(device.ConfigNetwork.Netmask)
 	}
-
-	// if device.ConfigNetwork.DNS1 != "" {
-	data.ConfigNetwork.PreferredDNS = iptypes.NewIPv4AddressPointerValue(device.ConfigNetwork.DNS1)
-	// }
-	// if device.ConfigNetwork.DNS2 != "" {
-	data.ConfigNetwork.AlternativeDNS = iptypes.NewIPv4AddressPointerValue(device.ConfigNetwork.DNS2)
-	// }
-	// if device.ConfigNetwork.DNSsuffix != "" {
-	data.ConfigNetwork.DNSSuffix = types.StringPointerValue(device.ConfigNetwork.DNSsuffix)
-	// }
-	// if device.ConfigNetwork.Gateway != "" {
-	data.ConfigNetwork.Gateway = iptypes.NewIPv4AddressPointerValue(device.ConfigNetwork.Gateway)
-	// }
-	// if device.ConfigNetwork.IP != "" {
-	data.ConfigNetwork.IP = iptypes.NewIPv4AddressPointerValue(device.ConfigNetwork.IP)
-	// }
-	// if device.ConfigNetwork.Netmask != "" {
-	data.ConfigNetwork.Netmask = iptypes.NewIPv4AddressPointerValue(device.ConfigNetwork.Netmask)
-	// }
 
 	data.PortOverrides = make(map[string]DeviceSwitchPortOverrideDataSourceModel, len(device.PortOverrides))
 	for _, override := range device.PortOverrides {

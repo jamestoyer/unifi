@@ -142,13 +142,8 @@ func (r *DeviceSwitchResource) Create(ctx context.Context, req resource.CreateRe
 		}
 	}
 
-	data, diags := newDeviceSwitchResourceModel(ctx, device, site, data)
-	if diags.HasError() {
-		resp.Diagnostics.Append(diags...)
-	}
-
 	data.ID = types.StringPointerValue(device.ID)
-	data, diags = r.update(ctx, site, data)
+	data, diags := r.update(ctx, site, data)
 	if diags.HasError() {
 		resp.Diagnostics.Append(diags...)
 	}
@@ -543,7 +538,10 @@ func newDeviceSwitchResourceModel(ctx context.Context, device *unifi.Device, sit
 	model.SiteID = types.StringPointerValue(device.SiteID)
 
 	// Configurable Values
-	model.Disabled = types.BoolPointerValue(device.Disabled)
+	if device.Disabled != nil {
+		model.Disabled = types.BoolPointerValue(device.Disabled)
+	}
+
 	model.LEDSettings = newDeviceSwitchLEDOverrideResourceModel(device, model.LEDSettings)
 	model.Mac = customtype.NewMacPointerValue(device.MAC)
 	model.ManagementNetworkID = types.StringPointerValue(device.MgmtNetworkID)
