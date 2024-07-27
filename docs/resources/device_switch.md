@@ -23,6 +23,7 @@ A Unifi switch device.
 
 ### Optional
 
+- `adopt` (Boolean) When true, the switch will be adopted by the controller. If this is `false` the switch must already be imported.
 - `disabled` (Boolean)
 - `led_settings` (Attributes) Overrides for the switch LEDs. (see [below for nested schema](#nestedatt--led_settings))
 - `port_overrides` (Attributes Map) (see [below for nested schema](#nestedatt--port_overrides))
