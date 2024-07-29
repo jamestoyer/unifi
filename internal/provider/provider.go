@@ -14,7 +14,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/provider/schema"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/types"
-	"github.com/paultyng/go-unifi/unifi"
+	"github.com/jamestoyer/go-unifi/unifi"
 	"net/http"
 	"net/http/cookiejar"
 	"os"
@@ -193,13 +193,14 @@ func (p *UnifiProvider) Configure(ctx context.Context, req provider.ConfigureReq
 
 func (p *UnifiProvider) Resources(ctx context.Context) []func() resource.Resource {
 	return []func() resource.Resource{
-		NewExampleResource,
+		NewDeviceSwitchResource,
 	}
 }
 
 func (p *UnifiProvider) DataSources(ctx context.Context) []func() datasource.DataSource {
 	return []func() datasource.DataSource{
 		NewDeviceDataSource,
+		NewDeviceSwitchDataSource,
 	}
 }
 

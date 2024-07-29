@@ -12,6 +12,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/schema/validator"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/hashicorp/terraform-plugin-log/tflog"
+	"github.com/jamestoyer/terraform-provider-unifi/internal/provider/utils"
 	"strconv"
 )
 
@@ -186,20 +187,20 @@ func (d *DeviceDataSource) Read(ctx context.Context, req datasource.ReadRequest,
 		return
 	}
 
-	data.ID = types.StringValue(device.ID)
+	data.ID = types.StringPointerValue(device.ID)
 	data.Adopted = types.BoolValue(device.Adopted)
-	data.Disabled = types.BoolValue(device.Disabled)
-	data.Model = types.StringValue(device.Model)
-	data.Name = types.StringValue(device.Name)
+	data.Disabled = types.BoolPointerValue(device.Disabled)
+	data.Model = types.StringPointerValue(device.Model)
+	data.Name = types.StringPointerValue(device.Name)
 	data.State = types.StringValue(device.State.String())
-	data.Type = types.StringValue(device.Type)
+	data.Type = types.StringPointerValue(device.Type)
 
 	data.PortOverrides = make(map[string]DevicePortOverrideDataSourceModel, len(device.PortOverrides))
 	for _, override := range device.PortOverrides {
 		excludedNetworkIDs := types.ListNull(types.StringType)
 		if override.ExcludedNetworkIDs != nil {
 			var attrs []attr.Value
-			for _, id := range override.ExcludedNetworkIDs {
+			for _, id := range *override.ExcludedNetworkIDs {
 				attrs = append(attrs, types.StringValue(id))
 			}
 
@@ -209,22 +210,22 @@ func (d *DeviceDataSource) Read(ctx context.Context, req datasource.ReadRequest,
 		portSecurityMACAddresses := types.ListNull(types.StringType)
 		if override.PortSecurityMACAddress != nil {
 			var attrs []attr.Value
-			for _, id := range override.PortSecurityMACAddress {
+			for _, id := range *override.PortSecurityMACAddress {
 				attrs = append(attrs, types.StringValue(id))
 			}
 
 			portSecurityMACAddresses = types.ListValueMust(types.StringType, attrs)
 		}
 
-		data.PortOverrides[strconv.Itoa(override.PortIDX)] = DevicePortOverrideDataSourceModel{
-			AggregateNumPorts:        types.Int32Value(int32(override.AggregateNumPorts)),
+		data.PortOverrides[strconv.Itoa(*override.PortIDX)] = DevicePortOverrideDataSourceModel{
+			AggregateNumPorts:        types.Int32PointerValue(utils.Int32PtrValue(override.AggregateNumPorts)),
 			ExcludedNetworkIDs:       excludedNetworkIDs,
-			Name:                     types.StringValue(override.Name),
-			NativeNetworkID:          types.StringValue(override.NATiveNetworkID),
-			OpMode:                   types.StringValue(override.OpMode),
-			POEMode:                  types.StringValue(override.PoeMode),
-			PortProfileID:            types.StringValue(override.PortProfileID),
-			PortSecurityEnabled:      types.BoolValue(override.PortSecurityEnabled),
+			Name:                     types.StringPointerValue(override.Name),
+			NativeNetworkID:          types.StringPointerValue(override.NATiveNetworkID),
+			OpMode:                   types.StringPointerValue(override.OpMode),
+			POEMode:                  types.StringPointerValue(override.PoeMode),
+			PortProfileID:            types.StringPointerValue(override.PortProfileID),
+			PortSecurityEnabled:      types.BoolPointerValue(override.PortSecurityEnabled),
 			PortSecurityMACAddresses: portSecurityMACAddresses,
 		}
 	}
