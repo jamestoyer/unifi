@@ -160,37 +160,63 @@ func TestAccDeviceSwitchResource_PortOverrides(t *testing.T) {
 		Steps: []resource.TestStep{
 			// Create and Read testing
 			{
-				Config: testAccDeviceConfigPortOverrides(*device.MAC, *network.ID),
+				Config: testAccDeviceConfigPortOverridesCreate(*device.MAC, *network.ID),
 				Check: resource.ComposeAggregateTestCheckFunc(
-					resource.TestCheckResourceAttr("unifi_device_switch.test", "name", "Test Switch"),
-					resource.TestCheckResourceAttrWith("unifi_device_switch.test", "id", func(value string) error {
-						if value == "" {
-							return errors.New("id is required")
-						}
+					resource.TestCheckResourceAttr("unifi_device_switch.test", "port_overrides.%", "9"),
 
-						return nil
-					}),
+					resource.TestCheckResourceAttr("unifi_device_switch.test", `port_overrides.1.name`, "Disabled"),
+					resource.TestCheckResourceAttr("unifi_device_switch.test", `port_overrides.1.disabled`, "true"),
+
+					resource.TestCheckResourceAttr("unifi_device_switch.test", `port_overrides.2.name`, "Block All Tagged VLAN"),
+					resource.TestCheckResourceAttr("unifi_device_switch.test", `port_overrides.2.tagged_vlan_management`, "block_all"),
+
+					resource.TestCheckResourceAttr("unifi_device_switch.test", `port_overrides.3.full_duplex`, "true"),
+					resource.TestCheckResourceAttr("unifi_device_switch.test", `port_overrides.3.link_speed`, "1000"),
+					resource.TestCheckResourceAttr("unifi_device_switch.test", `port_overrides.3.name`, "Link Speed"),
+					resource.TestCheckResourceAttr("unifi_device_switch.test", `port_overrides.3.operation`, "switch"),
+
+					resource.TestCheckResourceAttr("unifi_device_switch.test", `port_overrides.4.poe_mode`, "off"),
+					resource.TestCheckResourceAttr("unifi_device_switch.test", `port_overrides.4.name`, "POE Off"),
+
+					resource.TestCheckResourceAttr("unifi_device_switch.test", `port_overrides.5.name`, "Disabled native network"),
+					resource.TestCheckResourceAttr("unifi_device_switch.test", `port_overrides.5.native_network_id`, ""),
+
+					resource.TestCheckResourceAttr("unifi_device_switch.test", `port_overrides.6.aggregate_num_ports`, "2"),
+					resource.TestCheckResourceAttr("unifi_device_switch.test", `port_overrides.6.operation`, "aggregate"),
+					resource.TestCheckResourceAttr("unifi_device_switch.test", `port_overrides.6.name`, "Aggregate 1"),
+
+					resource.TestCheckResourceAttr("unifi_device_switch.test", `port_overrides.7.name`, "Aggregate 2"),
+
+					resource.TestCheckResourceAttr("unifi_device_switch.test", `port_overrides.8.mirror_port_index`, "9"),
+					resource.TestCheckResourceAttr("unifi_device_switch.test", `port_overrides.8.name`, "Mirror Root"),
+					resource.TestCheckResourceAttr("unifi_device_switch.test", `port_overrides.8.operation`, "mirror"),
+
+					resource.TestCheckResourceAttr("unifi_device_switch.test", `port_overrides.9.name`, "Mirror Target"),
 				),
 			},
 			// Update and Read testing
 			{
-				Config: testAccDeviceConfigPortOverrides(*device.MAC, *network.ID),
+				Config: testAccDeviceConfigPortOverridesUpdate(*device.MAC, *network.ID),
 				Check: resource.ComposeAggregateTestCheckFunc(
-					resource.TestCheckResourceAttr("unifi_device_switch.test", "name", "Updated Test Switch"),
-					resource.TestCheckResourceAttrWith("unifi_device_switch.test", "id", func(value string) error {
-						if value == "" {
-							return errors.New("id is required")
-						}
+					resource.TestCheckResourceAttr("unifi_device_switch.test", "port_overrides.%", "2"),
 
-						return nil
-					}),
+					resource.TestCheckResourceAttr("unifi_device_switch.test", `port_overrides.3.full_duplex`, "false"),
+					resource.TestCheckResourceAttr("unifi_device_switch.test", `port_overrides.3.link_speed`, "100"),
+					resource.TestCheckResourceAttr("unifi_device_switch.test", `port_overrides.3.name`, "Link Speed"),
+					resource.TestCheckResourceAttr("unifi_device_switch.test", `port_overrides.3.operation`, "switch"),
+
+					resource.TestCheckResourceAttr("unifi_device_switch.test", `port_overrides.4.poe_mode`, "pasv24"),
+					resource.TestCheckResourceAttr("unifi_device_switch.test", `port_overrides.4.name`, "Updated POE"),
 				),
 			},
 		},
 	})
 }
 
-func testAccDeviceConfigPortOverrides(macAddress, managementNetworkID string) string {
+func testAccDeviceConfigPortOverridesCreate(macAddress, managementNetworkID string) string {
+	// TODO: (jtoyer) Add support for tagged network tests
+	// TODO: (jtoyer) Add support for native network override tests
+	// TODO: (jtoyer) Add support for port profile tests
 	return fmt.Sprintf(`
 provider "unifi" {}
 resource "unifi_device_switch" "test" {
@@ -203,7 +229,41 @@ resource "unifi_device_switch" "test" {
       name     = "Disabled"
       disabled = true
     }
-    // "2" = {
+    "2" = {
+      name                   = "Block All Tagged VLAN"
+      tagged_vlan_management = "block_all"
+    }
+    "3" = {
+      full_duplex = true
+      link_speed  = "1000"
+      name        = "Link Speed"
+      operation   = "switch"
+    }
+    "4" = {
+      poe_mode = "off"
+      name     = "POE Off"
+    }
+    "5" = {
+      name              = "Disabled native network"
+      native_network_id = ""
+    }
+    "6" = {
+      aggregate_num_ports = 2
+      operation           = "aggregate"
+      name                = "Aggregate 1"
+    }
+    "7" = {
+      name = "Aggregate 2"
+    }
+    "8" = {
+      mirror_port_index = 9
+      name              = "Mirror Root"
+      operation         = "mirror"
+    }
+    "9" = {
+      name = "Mirror Target"
+    }
+    // "10" = {
     //   excluded_tagged_network_ids = [
     //     "669c08b2329aae15c4b3d60a",
     //   ]
@@ -213,101 +273,60 @@ resource "unifi_device_switch" "test" {
     //   poe_mode               = "auto"
     //   tagged_vlan_management = "custom"
     // },
-    "3" = {
-      name                   = "Block All Tagged VLAN"
-      tagged_vlan_management = "block_all"
-    }
-    // "4" = {
+    // "11" = {
     //   name              = "Native Network Override"
     //   native_network_id = "669c08b2329aae15c4b3d60a"
     // }
-    "5" = {
-      full_duplex = true
-      link_speed  = "1000"
-      name        = "Link Speed"
-      operation   = "switch"
-    }
-    "6" = {
-      poe_mode = "off"
-      name     = "POE Off"
-    }
-    // "7" = {
+    // "12" = {
     //   port_profile_id = "669c1ef8329aae15c4b3f791"
     //   name            = "Port Profile"
     // }
-    "8" = {
-      name              = "Disabled native network"
-      native_network_id = ""
-    }
-    "9" = {
-      aggregate_num_ports = 2
-      operation           = "aggregate"
-      name                = "Aggregate 1"
-    }
-    "10" = {
-      name = "Aggregate 2"
-    }
-    "11" = {
-      name = "Mirror Target"
-    }
-    "12" = {
-      mirror_port_index = 47
-      name              = "Mirror Root"
-      operation         = "mirror"
-    }
   }
 }
 `, macAddress, managementNetworkID)
 }
 
-// func TestAccDeviceSwitchResource(t *testing.T) {
-// 	resource.Test(t, resource.TestCase{
-// 		PreCheck:                 func() { testAccPreCheck(t) },
-// 		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
-// 		Steps: []resource.TestStep{
-// 			// Create and Read testing
-// 			{
-// 				Config: testAccExampleResourceConfig("one"),
-// 				Check: resource.ComposeAggregateTestCheckFunc(
-// 					resource.TestCheckResourceAttr("unifi_example.test", "configurable_attribute", "one"),
-// 					resource.TestCheckResourceAttr("unifi_example.test", "defaulted", "example value when not configured"),
-// 					resource.TestCheckResourceAttr("unifi_example.test", "id", "example-id"),
-// 				),
-// 			},
-// 			// ImportState testing
-// 			{
-// 				ResourceName:      "unifi_example.test",
-// 				ImportState:       true,
-// 				ImportStateVerify: true,
-// 				// This is not normally necessary, but is here because this
-// 				// example code does not have an actual upstream service.
-// 				// Once the Read method is able to refresh information from
-// 				// the upstream service, this can be removed.
-// 				ImportStateVerifyIgnore: []string{"configurable_attribute", "defaulted"},
-// 			},
-// 			// Update and Read testing
-// 			{
-// 				Config: testAccExampleResourceConfig("two"),
-// 				Check: resource.ComposeAggregateTestCheckFunc(
-// 					resource.TestCheckResourceAttr("unifi_example.test", "configurable_attribute", "two"),
-// 				),
-// 			},
-// 			// Delete testing automatically occurs in TestCase
-// 		},
-// 	})
-// }
-
-func testAccDeviceSwitchResourceConfig(macAddress, managementNetworkID string) string {
+func testAccDeviceConfigPortOverridesUpdate(macAddress, managementNetworkID string) string {
+	// TODO: (jtoyer) Add support for tagged network tests
+	// TODO: (jtoyer) Add support for native network override tests
+	// TODO: (jtoyer) Add support for port profile tests
 	return fmt.Sprintf(`
 provider "unifi" {}
-
-resource "unifi_device_switch" "example" {
-  name = "Example Switch Update"
-  mac  = %[1]q
-
+resource "unifi_device_switch" "test" {
+  name                  = "Port Overrides"
+  mac                   = %[1]q
   management_network_id = %[2]q
+
+  port_overrides = {
+    "3" = {
+      full_duplex = false
+      link_speed  = "100"
+      name        = "Link Speed"
+      operation   = "switch"
+    }
+    "4" = {
+      poe_mode = "pasv24"
+      name     = "Updated POE"
+    }
+    // "10" = {
+    //   excluded_tagged_network_ids = [
+    //     "669c08b2329aae15c4b3d60a",
+    //   ]
+    //   name                   = "Custom Tagged VLAN"
+    //   native_network_id      = "669c0336329aae15c4b318f2"
+    //   operation              = "switch"
+    //   poe_mode               = "auto"
+    //   tagged_vlan_management = "custom"
+    // },
+    // "11" = {
+    //   name              = "Native Network Override"
+    //   native_network_id = "669c08b2329aae15c4b3d60a"
+    // }
+    // "12" = {
+    //   port_profile_id = "669c1ef8329aae15c4b3f791"
+    //   name            = "Port Profile"
+    // }
+  }
 }
-
-
 `, macAddress, managementNetworkID)
 }

@@ -120,7 +120,7 @@ func (r *DeviceSwitchResource) Create(ctx context.Context, req resource.CreateRe
 	}
 
 	if device == nil {
-		resp.Diagnostics.AddError("Switch Error", fmt.Sprintf("Unable to find switch"))
+		resp.Diagnostics.AddError("Switch Error", "Unable to find switch")
 		return
 	}
 

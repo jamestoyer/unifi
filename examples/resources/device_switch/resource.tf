@@ -13,20 +13,11 @@ provider "unifi" {
   password = "admin"
 }
 
-data "unifi_device_switch" "example" {
-  mac = "00:27:22:00:00:01"
-}
-
-import {
-  id = data.unifi_device_switch.example.id
-  to = unifi_device_switch.example
-}
-
 resource "unifi_device_switch" "example" {
-  name = "Example Switch Update"
-  mac  = data.unifi_device_switch.example.mac
+  name = "Example Switch"
+  mac  = "00:27:22:00:00:05"
 
-  management_network_id = "669c0336329aae15c4b318f2"
+  management_network_id = "66a5357b30079358c34fe5d9"
 
   static_ip_settings = {
     ip            = "10.2.3.4"
@@ -36,77 +27,64 @@ resource "unifi_device_switch" "example" {
   }
 
   port_overrides = {
-    "35" = {
+    "1" = {
       name     = "Disabled"
       disabled = true
     }
-    "36" = {
+    "2" = {
       excluded_tagged_network_ids = [
-        "669c08b2329aae15c4b3d60a",
+        "66a52a6c30079358c34f3151",
       ]
       name                   = "Custom Tagged VLAN"
-      native_network_id      = "669c0336329aae15c4b318f2"
+      native_network_id      = "66a5358030079358c34fe5db"
       operation              = "switch"
       poe_mode               = "auto"
       tagged_vlan_management = "custom"
     },
-    "37" = {
+    "3" = {
       name                   = "Block All Tagged VLAN"
       tagged_vlan_management = "block_all"
     }
-    "38" = {
+    "4" = {
       name              = "Native Network Override"
-      native_network_id = "669c08b2329aae15c4b3d60a"
+      native_network_id = "66a52a6c30079358c34f3151"
     }
-    "39" = {
+    "5" = {
       full_duplex = true
       link_speed  = "1000"
       name        = "Link Speed"
       operation   = "switch"
     }
-    "40" = {
+    "6" = {
       poe_mode = "off"
       name     = "POE Off"
     }
-    "41" = {
+    "7" = {
       name = "Named Port"
     }
-    "42" = {
+    "8" = {
       port_profile_id = "669c1ef8329aae15c4b3f791"
       name            = "Port Profile"
     }
-    "44" = {
+    "9" = {
       name              = "Disabled native network"
       native_network_id = ""
     }
-    "45" = {
+    "10" = {
       aggregate_num_ports = 2
       operation           = "aggregate"
       name                = "Aggregate 1"
     }
-    "46" = {
+    "11" = {
       name = "Aggregate 2"
     }
-    "47" = {
-      #         disabled = true
+    "12" = {
       name = "Mirror Target"
     }
-    "48" = {
-      #         disabled = true
-      mirror_port_index = 47
+    "13" = {
+      mirror_port_index = 11
       name              = "Mirror Root"
       operation         = "mirror"
     }
   }
-}
-
-
-data "unifi_device_switch" "adopt" {
-  mac = "00:27:22:00:00:0a"
-}
-
-resource "unifi_device_switch" "adopt" {
-  mac                   = "00:27:22:00:00:0A"
-  management_network_id = "669c0336329aae15c4b318f2"
-  name                  = "adopted"
 }

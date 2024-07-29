@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/retry"
 	"github.com/jamestoyer/go-unifi/unifi"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -35,7 +36,13 @@ func cacheDeviceDetails(ctx context.Context, t *testing.T) {
 			for _, device := range devices {
 				switch *device.Type {
 				case "usw":
-					switchPool = append(switchPool, &device)
+					model := *device.Model
+					if !strings.HasPrefix(model, "US24") && !strings.HasPrefix(model, "US48") {
+						// Only get switches with enough ports for testing
+						continue
+					}
+
+					switchPool = addSwitch(switchPool, device)
 				}
 			}
 			return nil
@@ -45,6 +52,10 @@ func cacheDeviceDetails(ctx context.Context, t *testing.T) {
 			t.Fatal(err)
 		}
 	})
+}
+
+func addSwitch(devices []*unifi.Device, device unifi.Device) []*unifi.Device {
+	return append(devices, &device)
 }
 
 func getSwitchDevice(ctx context.Context, t *testing.T) (*unifi.Device, func()) {
