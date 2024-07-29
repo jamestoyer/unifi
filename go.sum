@@ -167,8 +167,8 @@ github.com/huandu/xstrings v1.5.0/go.mod h1:y5/lhBue+AyNmUVz9RLU9xbLR0o4KIIExikq
 github.com/imdario/mergo v0.3.11/go.mod h1:jmQim1M+e3UYxmgPu/WyfjB3N3VflVyUjjjwH0dnCYA=
 github.com/imdario/mergo v0.3.16 h1:wwQJbIsHYGMUyLSPrEq1CT16AhnhNJQ51+4fdHUnCl4=
 github.com/imdario/mergo v0.3.16/go.mod h1:WBLT9ZmE3lPoWsEzCh9LPo3TiwVN+ZKEjmz+hD27ysY=
-github.com/jamestoyer/go-unifi v0.0.0-20240720092047-5e018bec17da h1:3/2WuoQhoQ5wI5+glf0SHfqjKkz/CrtLEgv/VD9FQjE=
-github.com/jamestoyer/go-unifi v0.0.0-20240720092047-5e018bec17da/go.mod h1:Psxf6pCibpYclGSON5fkL/XJ/UNUnWIpNtQZj0h0/sw=
+github.com/jamestoyer/go-unifi v0.0.0-20240729190822-6893a4624fc9 h1:uJLqsV9j3QlfEF58/+hgu2FVun4ByTOnT5BZWxdcOys=
+github.com/jamestoyer/go-unifi v0.0.0-20240729190822-6893a4624fc9/go.mod h1:Psxf6pCibpYclGSON5fkL/XJ/UNUnWIpNtQZj0h0/sw=
 github.com/jbenet/go-context v0.0.0-20150711004518-d14ea06fba99 h1:BQSFePA1RWJOlocH6Fxy8MmwDt+yVQYULKfN0RoTN8A=
 github.com/jbenet/go-context v0.0.0-20150711004518-d14ea06fba99/go.mod h1:1lJo3i6rXxKeerYnT8Nvf0QmHCRC1n8sfWVwXF2Frvo=
 github.com/jhump/protoreflect v1.15.1 h1:HUMERORf3I3ZdX05WaQ6MIpd/NJ434hTp5YiKgfCL6c=
